@@ -1,0 +1,26 @@
+const router = require('express').Router()
+const { authenticate } = require('../middleware/auth')
+const { requireRole } = require('../middleware/role')
+const ctrl = require('../controllers/admin.controller')
+
+router.use(authenticate)
+router.use(requireRole('admin'))
+
+router.get('/dashboard', ctrl.getDashboardStats)
+router.get('/users', ctrl.getUsers)
+router.get('/users/:id', ctrl.getUserById)
+router.put('/users/:id', ctrl.updateUser)
+router.patch('/users/:id/deactivate', ctrl.deactivateUser)
+router.patch('/users/:id/activate', ctrl.activateUser)
+router.get('/companies', ctrl.getCompanies)
+router.get('/companies/:id', ctrl.getCompanyById)
+router.patch('/companies/:id/status', ctrl.updateCompanyStatus)
+router.get('/verification-queue', ctrl.getVerificationQueue)
+router.post('/verification/:id/review', ctrl.reviewVerification)
+router.get('/jobs', ctrl.getAdminJobs)
+router.patch('/jobs/:id/status', ctrl.updateJobStatus)
+router.get('/analytics', ctrl.getAnalytics)
+router.get('/revenue', ctrl.getRevenue)
+router.get('/reports', ctrl.getReports)
+
+module.exports = router

@@ -1,0 +1,247 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // The 'url' line has been removed entirely
+}
+
+enum Role {
+  JOB_SEEKER
+  COMPANY
+  ADMIN
+}
+
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum PlanTier {
+  FREE
+  STARTER
+  GROWTH
+  ENTERPRISE
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  FREELANCE
+  INTERNSHIP
+  REMOTE
+}
+
+enum ApplicationStatus {
+  PENDING
+  REVIEWING
+  SHORTLISTED
+  REJECTED
+  HIRED
+  WITHDRAWN
+}
+
+enum VerificationStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  role      Role     @default(JOB_SEEKER)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile      JobSeekerProfile?
+  company      Company?
+  applications Application[]
+  savedJobs    SavedJob[]
+  resume       Resume?
+
+  @@map("users")
+}
+
+model JobSeekerProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName String
+  lastName  String
+  phone     String?
+  district  String?
+  address   String?
+  bio       String?
+  avatarUrl String?
+  resumeUrl String?
+  skills    String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  education      Education[]
+  experience     Experience[]
+  certifications Certification[]
+
+  @@map("job_seeker_profiles")
+}
+
+model Company {
+  id          String        @id @default(cuid())
+  userId      String        @unique
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  industry    String?
+  size        String?
+  website     String?
+  district    String?
+  address     String?
+  description String?
+  logoUrl     String?
+  isVerified  Boolean       @default(false)
+  status      CompanyStatus @default(ACTIVE)
+  plan        PlanTier      @default(FREE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  jobs         Job[]
+  verification CompanyVerification?
+
+  @@map("companies")
+}
+
+model Job {
+  id           String    @id @default(cuid())
+  companyId    String
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title        String
+  description  String
+  requirements String?
+  jobType      JobType
+  category     String
+  salary       String?
+  district     String?
+  address      String?
+  isActive     Boolean   @default(true)
+  isFeatured   Boolean   @default(false)
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  applications Application[]
+  savedBy      SavedJob[]
+
+  @@map("jobs")
+}
+
+model Application {
+  id          String            @id @default(cuid())
+  jobId       String
+  job         Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coverLetter String?
+  resumeUrl   String?
+  status      ApplicationStatus @default(PENDING)
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([jobId, userId])
+  @@map("applications")
+}
+
+model SavedJob {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([jobId, userId])
+  @@map("saved_jobs")
+}
+
+model Education {
+  id          String           @id @default(cuid())
+  profileId   String
+  profile     JobSeekerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  institution String
+  degree      String
+  field       String?
+  startYear   Int
+  endYear     Int?
+  isCurrent   Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  @@map("education")
+}
+
+model Experience {
+  id          String           @id @default(cuid())
+  profileId   String
+  profile     JobSeekerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  company     String
+  title       String
+  description String?
+  startDate   DateTime
+  endDate     DateTime?
+  isCurrent   Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  @@map("experience")
+}
+
+model Certification {
+  id            String           @id @default(cuid())
+  profileId     String
+  profile       JobSeekerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name          String
+  issuer        String
+  issueDate     DateTime?
+  expiryDate    DateTime?
+  credentialUrl String?
+  createdAt     DateTime         @default(now())
+
+  @@map("certifications")
+}
+
+model Resume {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String?
+  summary        String?
+  personalData   Json?
+  experience     Json?
+  education      Json?
+  skills         Json?
+  projects       Json?
+  certifications Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("resumes")
+}
+
+model CompanyVerification {
+  id                  String             @id @default(cuid())
+  companyId           String             @unique
+  company             Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  panNumber           String?
+  panDocumentUrl      String?
+  registrationCertUrl String?
+  status              VerificationStatus @default(PENDING)
+  reviewNotes         String?
+  reviewedAt          DateTime?
+  submittedAt         DateTime           @default(now())
+
+  @@map("company_verifications")
+}
