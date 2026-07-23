@@ -1,17 +1,26 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Save, Trash2 } from 'lucide-react'
-import { Button, Alert } from '@/components/ui'
+import { ArrowLeft, Save, Trash2, Send, Ban, RotateCcw } from 'lucide-react'
+import { Button, Alert, Badge } from '@/components/ui'
 import { Input, Textarea, Select } from '@/components/ui/Input'
 import { JOB_TYPES, EXPERIENCE_LEVELS, JOB_CATEGORIES, NEPAL_DISTRICTS } from '@/utils/constants'
 import { jobService } from '@/services/jobService'
-import { formatDate } from '@/utils/formatters'
+import { toast } from '@/store/uiStore'
+import useAuthStore from '@/store/authStore'
+
+const STATUS_BADGE = {
+  DRAFT: { variant: 'default', label: 'Draft' },
+  ACTIVE: { variant: 'success', label: 'Active' },
+  CLOSED: { variant: 'default', label: 'Closed' },
+}
 
 export default function EditJob() {
   const navigate = useNavigate()
   const { id } = useParams()
   const queryClient = useQueryClient()
+  const { user } = useAuthStore()
+  const isVerified = !!user?.company?.isVerified
   const [form, setForm] = useState(null)
   const [saveError, setSaveError] = useState(null)
 
@@ -55,6 +64,28 @@ export default function EditJob() {
   const deleteMutation = useMutation({
     mutationFn: () => jobService.deleteJob(id),
     onSuccess: () => navigate('/company/jobs'),
+    onError: (err) => toast.error('Could not delete job', err.message || 'Please try again.'),
+  })
+
+  const invalidateJob = () => {
+    queryClient.invalidateQueries({ queryKey: ['job', id] })
+    queryClient.invalidateQueries({ queryKey: ['company', 'jobs'] })
+  }
+
+  const publishMutation = useMutation({
+    mutationFn: () => jobService.publishJob(id),
+    onSuccess: () => { invalidateJob(); toast.success('Published', 'Job is now live') },
+    onError: (err) => toast.error('Could not publish', err.message || 'Please try again.'),
+  })
+  const closeMutation = useMutation({
+    mutationFn: () => jobService.closeJob(id),
+    onSuccess: () => { invalidateJob(); toast.success('Closed', 'Job is no longer accepting applications') },
+    onError: (err) => toast.error('Could not close job', err.message || 'Please try again.'),
+  })
+  const reopenMutation = useMutation({
+    mutationFn: () => jobService.reopenJob(id),
+    onSuccess: () => { invalidateJob(); toast.success('Reopened', 'Job is live again') },
+    onError: (err) => toast.error('Could not reopen job', err.message || 'Please try again.'),
   })
 
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }))
@@ -87,9 +118,58 @@ export default function EditJob() {
         </button>
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Edit Job</h1>
-          <p className="text-slate-500 text-sm">{job?.title}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-slate-500 text-sm">{job?.title}</p>
+            {job?.status && (
+              <Badge variant={STATUS_BADGE[job.status]?.variant || 'default'} size="xs">
+                {STATUS_BADGE[job.status]?.label || job.status}
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
+
+      {job?.status === 'DRAFT' && (
+        <Alert
+          type={isVerified ? 'info' : 'warning'}
+          title={isVerified ? 'This job is a draft' : 'Verification required to publish'}
+          message={isVerified
+            ? 'Save your changes, then publish when ready.'
+            : 'Your company must be verified before this job can be published.'}
+          className="mb-5"
+          actions={
+            <Button variant="primary" size="sm" icon={Send} disabled={!isVerified || publishMutation.isPending} onClick={() => publishMutation.mutate()}>
+              Publish
+            </Button>
+          }
+        />
+      )}
+      {job?.status === 'ACTIVE' && (
+        <Alert
+          type="info"
+          title="This job is live"
+          message="Close it if you're no longer accepting applications."
+          className="mb-5"
+          actions={
+            <Button variant="outline" size="sm" icon={Ban} disabled={closeMutation.isPending} onClick={() => closeMutation.mutate()}>
+              Close Job
+            </Button>
+          }
+        />
+      )}
+      {job?.status === 'CLOSED' && (
+        <Alert
+          type="info"
+          title="This job is closed"
+          message={isVerified ? 'Reopen it to accept applications again.' : 'Your company must be verified before reopening this job.'}
+          className="mb-5"
+          actions={
+            <Button variant="outline" size="sm" icon={RotateCcw} disabled={!isVerified || reopenMutation.isPending} onClick={() => reopenMutation.mutate()}>
+              Reopen
+            </Button>
+          }
+        />
+      )}
 
       {updateMutation.isSuccess && (
         <Alert type="success" title="Job updated!" message="Your job listing has been saved." className="mb-5" dismissible />

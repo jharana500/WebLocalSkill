@@ -4,12 +4,13 @@ import { useForm } from 'react-hook-form'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { CheckCircle2, ArrowLeft, Briefcase } from 'lucide-react'
+import { CheckCircle2, ArrowLeft, Briefcase, Save } from 'lucide-react'
 import { Button, Alert, Badge } from '@/components/ui'
 import { Input, Textarea, Select } from '@/components/ui/Input'
 import { JOB_TYPES, EXPERIENCE_LEVELS, JOB_CATEGORIES, NEPAL_DISTRICTS } from '@/utils/constants'
 import { cn } from '@/utils/cn'
 import { jobService } from '@/services/jobService'
+import useAuthStore from '@/store/authStore'
 
 const schema = z.object({
   title: z.string().min(5, 'Job title must be at least 5 characters'),
@@ -31,8 +32,11 @@ const steps = ['Job Details', 'Requirements', 'Compensation', 'Review']
 export default function PostJob() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useAuthStore()
+  const isVerified = !!user?.company?.isVerified
   const [step, setStep] = useState(0)
   const [postedJob, setPostedJob] = useState(null)
+  const [publishedNow, setPublishedNow] = useState(false)
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
@@ -41,28 +45,33 @@ export default function PostJob() {
 
   const values = watch()
 
+  const buildPayload = (data, status) => ({
+    title: data.title,
+    category: data.category,
+    jobType: data.type,
+    experience: data.experience,
+    district: data.location,
+    salaryMin: data.salaryMin || undefined,
+    salaryMax: data.salaryMax || undefined,
+    description: data.description,
+    requirements: data.requirements,
+    benefits: data.benefits || undefined,
+    deadline: data.deadline,
+    openings: data.openings,
+    status,
+  })
+
   const createMutation = useMutation({
-    mutationFn: (data) => jobService.createJob({
-      title: data.title,
-      category: data.category,
-      jobType: data.type,
-      experience: data.experience,
-      district: data.location,
-      salaryMin: data.salaryMin || undefined,
-      salaryMax: data.salaryMax || undefined,
-      description: data.description,
-      requirements: data.requirements,
-      benefits: data.benefits || undefined,
-      deadline: data.deadline,
-      openings: data.openings,
-    }),
-    onSuccess: (res) => {
+    mutationFn: ({ data, status }) => jobService.createJob(buildPayload(data, status)),
+    onSuccess: (res, variables) => {
       queryClient.invalidateQueries(['company', 'jobs'])
+      setPublishedNow(variables.status === 'ACTIVE')
       setPostedJob(res?.job || res)
     },
   })
 
-  const handlePost = (data) => createMutation.mutate(data)
+  const handlePost = (data) => createMutation.mutate({ data, status: isVerified ? 'ACTIVE' : 'DRAFT' })
+  const handleSaveDraft = handleSubmit((data) => createMutation.mutate({ data, status: 'DRAFT' }))
 
   if (postedJob) {
     return (
@@ -70,9 +79,13 @@ export default function PostJob() {
         <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
           <CheckCircle2 size={40} className="text-emerald-600" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-900 mb-3">Job Posted Successfully!</h2>
+        <h2 className="text-2xl font-bold text-slate-900 mb-3">
+          {publishedNow ? 'Job Posted Successfully!' : 'Draft Saved'}
+        </h2>
         <p className="text-slate-500 mb-8 max-w-sm mx-auto">
-          Your job posting is now live and will appear in search results for qualified candidates.
+          {publishedNow
+            ? 'Your job posting is now live and will appear in search results for qualified candidates.'
+            : 'Your job has been saved as a draft. You can publish it once your company is verified.'}
         </p>
         <div className="flex gap-3 justify-center">
           <Button variant="primary" onClick={() => navigate('/company/jobs')}>View My Jobs</Button>
@@ -215,21 +228,42 @@ export default function PostJob() {
           )}
         </div>
 
-        <div className="flex items-center justify-between">
+        {step === steps.length - 1 && !isVerified && (
+          <Alert
+            type="warning"
+            title="Verification required to publish"
+            message="Your company isn't verified yet, so this job will be saved as a draft. Complete verification to publish it live."
+            className="mb-5"
+          />
+        )}
+
+        <div className="flex items-center justify-between flex-wrap gap-3">
           {step > 0 ? (
             <Button variant="outline" onClick={() => setStep(s => s - 1)} type="button">← Previous</Button>
           ) : <div />}
           {step < steps.length - 1 ? (
             <Button variant="primary" onClick={() => setStep(s => s + 1)} type="button">Continue →</Button>
           ) : (
-            <Button
-              variant="primary"
-              type="submit"
-              icon={CheckCircle2}
-              disabled={createMutation.isPending}
-            >
-              {createMutation.isPending ? 'Posting...' : 'Post Job Live'}
-            </Button>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                type="button"
+                icon={Save}
+                onClick={handleSaveDraft}
+                disabled={createMutation.isPending}
+              >
+                Save as Draft
+              </Button>
+              <Button
+                variant="primary"
+                type="submit"
+                icon={CheckCircle2}
+                disabled={createMutation.isPending || !isVerified}
+                title={!isVerified ? 'Your company must be verified before publishing jobs' : undefined}
+              >
+                {createMutation.isPending ? 'Posting...' : 'Post Job Live'}
+              </Button>
+            </div>
           )}
         </div>
       </form>

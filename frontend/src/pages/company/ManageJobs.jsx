@@ -1,47 +1,74 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Edit2, Trash2, Eye, BarChart2, MoreVertical } from 'lucide-react'
-import { Button, Badge, EmptyState, Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui'
+import { Plus, Edit2, Trash2, Eye, Send, Ban, RotateCcw, MoreVertical } from 'lucide-react'
+import { Button, Badge, Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { cn } from '@/utils/cn'
 import { jobService } from '@/services/jobService'
 import { formatDate } from '@/utils/formatters'
+import { toast } from '@/store/uiStore'
+import useAuthStore from '@/store/authStore'
 
 const JOB_TYPE_LABELS = {
   FULL_TIME: 'Full Time', PART_TIME: 'Part Time', CONTRACT: 'Contract',
   INTERNSHIP: 'Internship', REMOTE: 'Remote', FREELANCE: 'Freelance',
 }
 
+const STATUS_BADGE = {
+  DRAFT: { variant: 'default', label: 'Draft' },
+  ACTIVE: { variant: 'success', label: 'Active' },
+  CLOSED: { variant: 'default', label: 'Closed' },
+}
+
+const STATUS_TABS = ['all', 'DRAFT', 'ACTIVE', 'CLOSED']
+
 export default function ManageJobs() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useAuthStore()
+  const isVerified = !!user?.company?.isVerified
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['company', 'jobs'],
     queryFn: () => jobService.getCompanyJobs({ limit: 100 }),
     staleTime: 1000 * 60 * 2,
   })
 
-  const toggleMutation = useMutation({
-    mutationFn: (id) => jobService.toggleJobStatus(id),
-    onSuccess: () => queryClient.invalidateQueries(['company', 'jobs']),
-  })
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['company', 'jobs'] })
 
+  const publishMutation = useMutation({
+    mutationFn: (id) => jobService.publishJob(id),
+    onSuccess: () => { invalidate(); toast.success('Published', 'Job is now live') },
+    onError: (err) => toast.error('Could not publish', err.message || 'Please try again.'),
+  })
+  const closeMutation = useMutation({
+    mutationFn: (id) => jobService.closeJob(id),
+    onSuccess: () => { invalidate(); toast.success('Closed', 'Job is no longer accepting applications') },
+    onError: (err) => toast.error('Could not close job', err.message || 'Please try again.'),
+  })
+  const reopenMutation = useMutation({
+    mutationFn: (id) => jobService.reopenJob(id),
+    onSuccess: () => { invalidate(); toast.success('Reopened', 'Job is live again') },
+    onError: (err) => toast.error('Could not reopen job', err.message || 'Please try again.'),
+  })
   const deleteMutation = useMutation({
     mutationFn: (id) => jobService.deleteJob(id),
-    onSuccess: () => queryClient.invalidateQueries(['company', 'jobs']),
+    onSuccess: () => { invalidate(); toast.success('Deleted', 'Job listing removed') },
+    onError: (err) => toast.error('Could not delete job', err.message || 'Please try again.'),
   })
 
   const allJobs = data?.jobs || data || []
-  const filtered = allJobs.filter(j =>
-    (!search || j.title.toLowerCase().includes(search.toLowerCase())) &&
-    (statusFilter === 'all' || (statusFilter === 'active' ? j.isActive : !j.isActive))
-  )
+  const filtered = Array.isArray(allJobs)
+    ? allJobs.filter(j =>
+      (!search || j.title.toLowerCase().includes(search.toLowerCase())) &&
+      (statusFilter === 'all' || j.status === statusFilter)
+    )
+    : []
 
-  const activeCount = allJobs.filter(j => j.isActive).length
+  const activeCount = Array.isArray(allJobs) ? allJobs.filter(j => j.status === 'ACTIVE').length : 0
 
   return (
     <div className="max-w-7xl mx-auto animate-fade-in">
@@ -63,7 +90,7 @@ export default function ManageJobs() {
           className="flex-1 min-w-48 max-w-sm"
         />
         <div className="flex gap-2">
-          {['all', 'active', 'closed'].map(s => (
+          {STATUS_TABS.map(s => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
@@ -72,7 +99,7 @@ export default function ManageJobs() {
                 statusFilter === s ? 'bg-blue-600 text-white border-blue-600' : 'text-slate-600 border-slate-200 hover:border-slate-300 bg-white'
               )}
             >
-              {s === 'all' ? 'All Jobs' : s.charAt(0).toUpperCase() + s.slice(1)}
+              {s === 'all' ? 'All Jobs' : STATUS_BADGE[s]?.label || s}
             </button>
           ))}
         </div>
@@ -100,76 +127,104 @@ export default function ManageJobs() {
                   <td className="px-4 py-4"><div className="h-8 bg-slate-100 rounded w-16 ml-auto" /></td>
                 </tr>
               ))
-            ) : filtered.length === 0 ? (
-              <tr><td colSpan={5} className="text-center py-12 text-slate-400">No jobs found</td></tr>
-            ) : filtered.map(job => (
-              <tr key={job.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-4 py-4">
-                  <button onClick={() => navigate(`/company/jobs/${job.id}/edit`)} className="text-left hover:text-blue-700 transition-colors">
-                    <p className="font-semibold text-slate-900 text-sm">{job.title}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-xs text-slate-400">{JOB_TYPE_LABELS[job.jobType] || job.jobType}</span>
-                      {job.district && <><span className="text-xs text-slate-400">·</span><span className="text-xs text-slate-400">{job.district}</span></>}
-                    </div>
-                  </button>
-                </td>
-                <td className="px-4 py-4 hidden sm:table-cell">
-                  {job.isActive
-                    ? <Badge variant="success" size="xs" dot>Active</Badge>
-                    : <Badge variant="default" size="xs" dot>Closed</Badge>
-                  }
-                </td>
-                <td className="px-4 py-4 hidden md:table-cell">
-                  <span className="font-semibold text-slate-900">{job._count?.applications ?? 0}</span>
-                  <span className="text-xs text-slate-400 ml-1">total</span>
-                </td>
-                <td className="px-4 py-4 text-xs text-slate-500 hidden lg:table-cell">
-                  {job.deadline ? formatDate(job.deadline) : '—'}
-                </td>
-                <td className="px-4 py-4">
-                  <div className="flex items-center justify-end gap-1">
-                    <button
-                      onClick={() => navigate(`/company/applicants?job=${job.id}`)}
-                      className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                      title="View applicants"
-                    >
-                      <Eye size={15} />
-                    </button>
-                    <button
-                      onClick={() => navigate(`/company/jobs/${job.id}/edit`)}
-                      className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                      title="Edit job"
-                    >
-                      <Edit2 size={15} />
-                    </button>
-                    <Dropdown
-                      trigger={
-                        <button className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
-                          <MoreVertical size={15} />
-                        </button>
-                      }
-                      align="right"
-                    >
-                      <DropdownItem icon={Eye} onClick={() => toggleMutation.mutate(job.id)}>
-                        {job.isActive ? 'Close Job' : 'Reactivate'}
-                      </DropdownItem>
-                      <DropdownSeparator />
-                      <DropdownItem
-                        icon={Trash2}
-                        danger
-                        onClick={() => {
-                          if (confirm(`Delete "${job.title}"? This cannot be undone.`)) {
-                            deleteMutation.mutate(job.id)
-                          }
-                        }}
-                      >
-                        Delete Job
-                      </DropdownItem>
-                    </Dropdown>
-                  </div>
+            ) : isError ? (
+              <tr>
+                <td colSpan={5} className="text-center py-12">
+                  <p className="text-red-500 mb-3">Failed to load jobs</p>
+                  <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
                 </td>
               </tr>
-            ))}
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={5} className="text-center py-12 text-slate-400">No jobs found</td></tr>
+            ) : filtered.map(job => {
+              const badge = STATUS_BADGE[job.status] || STATUS_BADGE.DRAFT
+              return (
+                <tr key={job.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-4">
+                    <button onClick={() => navigate(`/company/jobs/${job.id}/edit`)} className="text-left hover:text-blue-700 transition-colors">
+                      <p className="font-semibold text-slate-900 text-sm">{job.title}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-slate-400">{JOB_TYPE_LABELS[job.jobType] || job.jobType}</span>
+                        {job.district && <><span className="text-xs text-slate-400">·</span><span className="text-xs text-slate-400">{job.district}</span></>}
+                      </div>
+                    </button>
+                  </td>
+                  <td className="px-4 py-4 hidden sm:table-cell">
+                    <Badge variant={badge.variant} size="xs" dot>{badge.label}</Badge>
+                  </td>
+                  <td className="px-4 py-4 hidden md:table-cell">
+                    <span className="font-semibold text-slate-900">{job.applicationCount ?? job._count?.applications ?? 0}</span>
+                    <span className="text-xs text-slate-400 ml-1">total</span>
+                  </td>
+                  <td className="px-4 py-4 text-xs text-slate-500 hidden lg:table-cell">
+                    {job.deadline ? formatDate(job.deadline) : '—'}
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => navigate(`/company/applicants?job=${job.id}`)}
+                        className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                        title="View applicants"
+                      >
+                        <Eye size={15} />
+                      </button>
+                      <button
+                        onClick={() => navigate(`/company/jobs/${job.id}/edit`)}
+                        className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                        title="Edit job"
+                      >
+                        <Edit2 size={15} />
+                      </button>
+                      <Dropdown
+                        trigger={
+                          <button className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+                            <MoreVertical size={15} />
+                          </button>
+                        }
+                        align="right"
+                      >
+                        {job.status === 'DRAFT' && (
+                          <DropdownItem
+                            icon={Send}
+                            disabled={!isVerified || publishMutation.isPending}
+                            onClick={() => publishMutation.mutate(job.id)}
+                          >
+                            {isVerified ? 'Publish' : 'Publish (verify company first)'}
+                          </DropdownItem>
+                        )}
+                        {job.status === 'ACTIVE' && (
+                          <DropdownItem icon={Ban} disabled={closeMutation.isPending} onClick={() => closeMutation.mutate(job.id)}>
+                            Close Job
+                          </DropdownItem>
+                        )}
+                        {job.status === 'CLOSED' && (
+                          <DropdownItem
+                            icon={RotateCcw}
+                            disabled={!isVerified || reopenMutation.isPending}
+                            onClick={() => reopenMutation.mutate(job.id)}
+                          >
+                            {isVerified ? 'Reopen' : 'Reopen (verify company first)'}
+                          </DropdownItem>
+                        )}
+                        <DropdownSeparator />
+                        <DropdownItem
+                          icon={Trash2}
+                          danger
+                          disabled={deleteMutation.isPending}
+                          onClick={() => {
+                            if (confirm(`Delete "${job.title}"? This cannot be undone.`)) {
+                              deleteMutation.mutate(job.id)
+                            }
+                          }}
+                        >
+                          Delete Job
+                        </DropdownItem>
+                      </Dropdown>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
