@@ -4,6 +4,7 @@ import { Menu, X, ChevronDown, Briefcase, Building2 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui'
 import useAuthStore from '@/store/authStore'
+import { getRoleDashboardPath } from '@/utils/roles'
 import { Outlet } from 'react-router-dom'
 
 const navLinks = [
@@ -25,11 +26,7 @@ function Navbar() {
     return () => window.removeEventListener('scroll', handler)
   }, [])
 
-  const getDashboardPath = () => {
-    if (user?.role === 'admin') return '/admin/dashboard'
-    if (user?.role === 'company') return '/company/dashboard'
-    return '/dashboard'
-  }
+  const getDashboardPath = () => getRoleDashboardPath(user?.role) || '/dashboard'
 
   return (
     <nav

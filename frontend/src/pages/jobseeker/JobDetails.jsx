@@ -10,6 +10,7 @@ import { cn } from '@/utils/cn'
 import { jobService } from '@/services/jobService'
 import { applicationService } from '@/services/applicationService'
 import useAuthStore from '@/store/authStore'
+import { normalizeRole } from '@/utils/roles'
 import { formatDate } from '@/utils/formatters'
 
 const JOB_TYPE_LABELS = {
@@ -56,7 +57,7 @@ export default function JobDetails() {
   const { id } = useParams()
   const queryClient = useQueryClient()
   const { user } = useAuthStore()
-  const isJobSeeker = user?.role === 'JOB_SEEKER'
+  const isJobSeeker = normalizeRole(user?.role) === 'job_seeker'
 
   const { data: jobData, isLoading, isError } = useQuery({
     queryKey: ['job', id],

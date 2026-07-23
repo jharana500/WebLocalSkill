@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import useAuthStore from "@/store/authStore";
 import { authService } from "@/services/authService";
 import { toast } from "@/store/uiStore";
+import { getRoleDashboardPath } from "@/utils/roles";
 
 export function useLogin() {
   const { login } = useAuthStore();
@@ -13,11 +14,9 @@ export function useLogin() {
     onSuccess: (data) => {
       login(data.user, data.token);
       toast.success("Welcome back", "You have signed in successfully.");
-      const role = data.user.role;
-      if (role === "admin") navigate("/admin/dashboard", { replace: true });
-      else if (role === "company")
-        navigate("/company/dashboard", { replace: true });
-      else navigate("/dashboard", { replace: true });
+      navigate(getRoleDashboardPath(data.user.role) || "/dashboard", {
+        replace: true,
+      });
     },
     onError: (err) => {
       toast.error("Login failed", err.message || "Invalid credentials");
