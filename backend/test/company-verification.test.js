@@ -206,6 +206,9 @@ test("admin can mark a company under review, creating an audit log and notificat
 });
 
 test("unverified company cannot publish an active job, but can save a draft", async () => {
+  // Job creation's draft/publish intent moved from a boolean `isActive` to an
+  // explicit `status` field in Phase 5 (job.controller.js) — updated here to
+  // match the current contract (see PHASE_5_COMPLETION_REPORT.md).
   const draftRes = await fetch(`${baseUrl}/api/jobs`, {
     method: "POST",
     headers: { ...jsonHeaders(), Authorization: `Bearer ${companyCToken}` },
@@ -214,11 +217,12 @@ test("unverified company cannot publish an active job, but can save a draft", as
       description: "desc",
       jobType: "full_time",
       category: "Tech",
-      isActive: false,
+      status: "DRAFT",
     }),
   });
   const draftBody = await draftRes.json();
   assert.equal(draftRes.status, 201);
+  assert.equal(draftBody.data.job.status, "DRAFT");
   assert.equal(draftBody.data.job.isActive, false);
 
   const publishRes = await fetch(`${baseUrl}/api/jobs`, {
@@ -229,7 +233,7 @@ test("unverified company cannot publish an active job, but can save a draft", as
       description: "desc",
       jobType: "full_time",
       category: "Tech",
-      isActive: true,
+      status: "ACTIVE",
     }),
   });
   assert.equal(publishRes.status, 403);
