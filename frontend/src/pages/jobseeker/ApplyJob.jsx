@@ -8,14 +8,8 @@ import { cn } from '@/utils/cn'
 import { jobService } from '@/services/jobService'
 import { userService } from '@/services/userService'
 import { applicationService } from '@/services/applicationService'
-import { formatDate } from '@/utils/formatters'
 
 const steps = ['Review Info', 'Resume', 'Cover Letter', 'Submit']
-
-const JOB_TYPE_LABELS = {
-  FULL_TIME: 'Full Time', PART_TIME: 'Part Time', CONTRACT: 'Contract',
-  INTERNSHIP: 'Internship', REMOTE: 'Remote', FREELANCE: 'Freelance',
-}
 
 export default function ApplyJob() {
   const navigate = useNavigate()

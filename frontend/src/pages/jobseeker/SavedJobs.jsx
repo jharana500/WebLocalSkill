@@ -1,8 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bookmark, BookmarkX, MapPin, Clock, Briefcase } from 'lucide-react'
+import { Bookmark, BookmarkX, MapPin, Clock } from 'lucide-react'
 import { Badge, VerifiedBadge, EmptyState, Button } from '@/components/ui'
-import { cn } from '@/utils/cn'
 import { applicationService } from '@/services/applicationService'
 import { formatRelativeTime, formatDate } from '@/utils/formatters'
 

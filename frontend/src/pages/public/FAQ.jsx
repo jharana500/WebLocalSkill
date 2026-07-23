@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import { cn } from '@/utils/cn'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui'
 

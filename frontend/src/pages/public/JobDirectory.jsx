@@ -5,7 +5,7 @@ import { MapPin, Bookmark, Clock, Briefcase, SlidersHorizontal } from 'lucide-re
 import { Button, Badge, VerifiedBadge, Pagination, EmptyState } from '@/components/ui'
 import { SearchBar } from '@/components/ui/SearchBar'
 import { useDebounce } from '@/hooks/useDebounce'
-import { JOB_TYPES, EXPERIENCE_LEVELS, JOB_CATEGORIES, NEPAL_DISTRICTS, SALARY_RANGES } from '@/utils/constants'
+import { JOB_TYPES, EXPERIENCE_LEVELS, NEPAL_DISTRICTS } from '@/utils/constants'
 import { jobService } from '@/services/jobService'
 import { formatRelativeTime } from '@/utils/formatters'
 
