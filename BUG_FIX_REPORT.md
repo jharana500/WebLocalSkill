@@ -1,5 +1,63 @@
 # LocalSkill Bug Fix Report
 
+## Verification Round — Runtime Stabilization Re-Audit
+
+This round re-audited every bug listed in the Phase 1 runtime-stabilization brief against the actual code and a live backend/database, rather than assuming the previous round's fixes still held.
+
+### Scope re-verified
+- `backend/src/routes/application.routes.js`, `backend/src/controllers/application.controller.js`
+- `backend/src/middleware/role.js`, `backend/src/middleware/auth.js`
+- `backend/src/controllers/company.controller.js`, `backend/src/routes/company.routes.js`, `backend/src/routes/billing.routes.js`
+- `backend/src/utils/response.js`, `backend/server.js`
+- `backend/prisma/schema.prisma`, `backend/prisma/migrations/`, `backend/prisma.config.js`, `backend/src/lib/prisma.js`
+- `frontend/vite.config.js`, `frontend/src/services/api.js`, `frontend/src/services/applicationService.js`, `frontend/src/services/companyService.js`
+- `frontend/src/pages/company/Applicants.jsx`, `frontend/src/pages/company/Billing.jsx`
+- `frontend/src/pages/auth/Login.jsx`, `frontend/src/hooks/useAuth.js`, `frontend/src/store/authStore.js`, `frontend/src/routes/ProtectedRoute.jsx`
+- `frontend/src/components/ErrorBoundary.jsx`, `frontend/src/main.jsx`
+
+### Method
+Rather than re-reading code in isolation, each bug was reproduced or disproved against a running backend (`node server.js`) and a live local PostgreSQL database, using a disposable test company account created and deleted for this purpose:
+
+```bash
+curl http://localhost:5000/api/health
+curl http://localhost:5000/api/applications/company?page=1&limit=10        # no token
+curl -H "Authorization: Bearer <company token>" \
+  http://localhost:5000/api/applications/company?page=1&limit=10           # company token
+curl -H "Authorization: Bearer <job_seeker token>" \
+  http://localhost:5000/api/applications/company?page=1&limit=10           # wrong role
+curl -X POST http://localhost:5000/api/auth/login -d '{"email":"...","password":"wrong"}'
+```
+
+### Result
+
+All 8 bugs listed in the Phase 1 brief were found **already fixed** by the previous debugging round (documented below in "Current Debugging Round"), and every fix still holds:
+
+| Bug | Verified via | Result |
+|---|---|---|
+| `/api/applications/company` returns 500 | curl with/without token, with wrong role | Returns 401 (no token), 403 (wrong role), 200 with `{applications:[], pagination:{...}}` (empty company) — never 500 |
+| `/company/billing` white screen | Code read of `Billing.jsx` + `GET /api/company/subscription` and `/api/company/billing/history` | Safe normalizers (`unwrapData`, `toArray`, `normalizeSubscription`) already in place; backend returns safe Free-plan/empty-history fallback |
+| `/company/applicants` fails to load | Code read of `Applicants.jsx` + live API response | `getApplicationsPayload()` already normalizes multiple response shapes and guards `Array.isArray` |
+| Frontend calls via `localhost:5173/api/...` | `vite.config.js` | Proxy already forwards `/api` → `http://localhost:5000` |
+| Invalid login reloads the page | Code read of `Login.jsx` | Uses `react-hook-form` `handleSubmit`, no native form submit/reload |
+| Pages crash on null/undefined/wrong-shaped API data | Code read of both pages | Both use optional chaining and array/type guards throughout |
+| Backend errors return inconsistent JSON/HTML | curl to an unknown route and a 401 case | Both return `application/json`, never Express's default HTML error page |
+| Missing loading/error/empty/retry states | Code read of both pages | Both implement all four states |
+
+### Gap found and fixed this round
+
+**No automated tests existed for any of the above.** Every verification in the previous round was manual/one-off, meaning a future regression would not be caught automatically. This round added `backend/test/runtime.test.js` (Node's built-in `node:test` runner, no new dependency) covering the exact scenarios above, and made `server.js` testable by exporting the Express `app` and guarding `app.listen()` behind `require.main === module` (so `node server.js` behaves identically, but tests can import `app` and bind an ephemeral port instead).
+
+```bash
+npm test
+# 7 tests, 7 pass
+```
+
+While wiring this test up, `package.json`'s `test` script needed `node --test test/*.test.js` instead of `node --test test/` — the bare directory form failed to resolve in this environment. This is noted for anyone re-running it elsewhere.
+
+No other code changes were required in this round because no other gap was found. See `PHASE_1_COMPLETION_REPORT.md` for the full commit-by-commit accounting, including which planned fix-commits were skipped and why.
+
+---
+
 ## Current Debugging Round
 
 ### Scope inspected
