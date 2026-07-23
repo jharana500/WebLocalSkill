@@ -39,6 +39,7 @@ export const Input = forwardRef(function Input(
         <input
           ref={ref}
           type={inputType}
+          aria-invalid={!!error}
           className={cn(
             'w-full h-10 rounded-lg border bg-white text-slate-900 text-sm transition-all duration-150',
             'placeholder:text-slate-400',
