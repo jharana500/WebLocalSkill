@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const prisma = require("../lib/prisma");
 const { sendError, sendSuccess } = require("../utils/response");
 const { isValidPassword, PASSWORD_REQUIREMENTS } = require("../utils/validation");
+const { normalizeCompanyName } = require("../services/companyDuplicateService");
 
 const PROFILE_SELECT = {
   profile: { select: { firstName: true, lastName: true, avatarUrl: true } },
@@ -92,7 +93,12 @@ async function register(req, res) {
           },
         }),
         ...(normalizedRole === "COMPANY" && {
-          company: { create: { name: companyName || "" } },
+          company: {
+            create: {
+              name: companyName || "",
+              normalizedName: normalizeCompanyName(companyName || ""),
+            },
+          },
         }),
       },
       select: { id: true, email: true, role: true, ...PROFILE_SELECT },

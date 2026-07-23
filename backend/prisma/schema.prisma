@@ -117,6 +117,7 @@ model Company {
   normalizedName String?
   industry       String?
   size           String?
+  phone          String?
   website        String?
   district       String?
   address        String?

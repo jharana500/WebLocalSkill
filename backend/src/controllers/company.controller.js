@@ -1,5 +1,6 @@
 const prisma = require("../lib/prisma");
 const { getFileUrl } = require("../middleware/upload");
+const { normalizeCompanyName } = require("../services/companyDuplicateService");
 
 async function getProfile(req, res) {
   const company = await prisma.company.findUnique({
@@ -12,12 +13,18 @@ async function getProfile(req, res) {
 }
 
 async function updateProfile(req, res) {
-  const { name, industry, size, website, district, address, description } =
+  const { name, industry, size, phone, website, district, address, description } =
     req.body;
+  const normalizedName = name !== undefined ? normalizeCompanyName(name) : undefined;
   const company = await prisma.company.upsert({
     where: { userId: req.user.id },
-    update: { name, industry, size, website, district, address, description },
-    create: { userId: req.user.id, name: name || "" },
+    update: { name, normalizedName, industry, size, phone, website, district, address, description },
+    create: {
+      userId: req.user.id,
+      name: name || "",
+      normalizedName: normalizeCompanyName(name || ""),
+      phone,
+    },
   });
   res.json({ company });
 }
@@ -49,13 +56,19 @@ async function submitVerification(req, res) {
     where: { companyId: company.id },
     update: {
       panNumber: req.body.panNumber,
+      registrationNumber: req.body.registrationNumber,
       panDocumentUrl: panDocUrl,
       registrationCertUrl: regCertUrl,
       status: "PENDING",
+      reviewNotes: null,
+      reviewedById: null,
+      reviewedAt: null,
+      duplicateOfCompanyId: null,
     },
     create: {
       companyId: company.id,
       panNumber: req.body.panNumber,
+      registrationNumber: req.body.registrationNumber,
       panDocumentUrl: panDocUrl,
       registrationCertUrl: regCertUrl,
     },
