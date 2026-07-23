@@ -23,7 +23,7 @@ async function authenticate(req, res, next) {
     req.user = user;
     next();
   } catch {
-    return sendError(res, 401, "Invalid or expired token");
+    return sendError(res, 401, "Session expired. Please log in again.");
   }
 }
 
