@@ -124,3 +124,22 @@ export const slugify = (text) => {
 export const pluralize = (count, singular, plural) => {
   return `${count} ${count === 1 ? singular : plural || singular + 's'}`
 }
+
+// Shared by the resume live-preview and the exported PDF so date ranges
+// render identically in both places, using a plain ASCII hyphen only.
+export const formatDateRange = (start, end, isCurrent) => {
+  const parts = []
+  if (start) parts.push(start)
+  if (isCurrent) parts.push('Present')
+  else if (end) parts.push(end)
+  return parts.join(' - ')
+}
+
+// Prefixes a bare domain (e.g. "linkedin.com/in/x") with https:// so links
+// are always valid/clickable, without forcing the user to type the scheme.
+export const normalizeUrl = (url) => {
+  const value = (url || '').trim()
+  if (!value) return ''
+  if (/^https?:\/\//i.test(value)) return value
+  return `https://${value}`
+}

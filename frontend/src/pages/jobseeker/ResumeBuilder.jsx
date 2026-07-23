@@ -9,6 +9,7 @@ import {
   MapPin,
   Plus,
   Trash2,
+  RefreshCw,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Alert } from "@/components/ui";
@@ -17,9 +18,31 @@ import { cn } from "@/utils/cn";
 import { resumeService } from "@/services/resumeService";
 import useAuthStore from "@/store/authStore";
 import { toast } from "@/store/uiStore";
+import { formatDateRange, normalizeUrl } from "@/utils/formatters";
 import ResumePDFDocument from "./ResumePDFDocument";
 
-const tabs = ["Personal", "Experience", "Education", "Skills", "Preview"];
+const tabs = [
+  "Personal",
+  "Experience",
+  "Education",
+  "Skills",
+  "Projects",
+  "Certifications",
+  "Preview",
+];
+
+function makeId() {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `id_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function withIds(list) {
+  return (Array.isArray(list) ? list : []).map((item) => ({
+    ...item,
+    id: item?.id || makeId(),
+  }));
+}
 
 function ResumePreview({ data }) {
   const expList = (data.experience || []).filter(
@@ -33,12 +56,19 @@ function ResumePreview({ data }) {
   const eduList = (data.education || []).filter(
     (edu) => edu.degree || edu.institution || edu.startYear || edu.endYear,
   );
+  const projectList = (data.projects || []).filter(
+    (p) => p.name || p.description || p.technologies || p.link,
+  );
+  const certList = (data.certifications || []).filter(
+    (c) => c.name || c.issuer || c.issueDate || c.credentialUrl,
+  );
   const skills = data.skills
     ? data.skills
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
     : [];
+  const portfolioUrl = normalizeUrl(data.portfolio);
 
   return (
     <div
@@ -66,6 +96,16 @@ function ResumePreview({ data }) {
               <MapPin size={10} /> {data.location}
             </span>
           )}
+          {portfolioUrl && (
+            <a
+              href={portfolioUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              {data.portfolio}
+            </a>
+          )}
         </div>
       </div>
       {data.summary && (
@@ -82,18 +122,14 @@ function ResumePreview({ data }) {
             Experience
           </h3>
           <div className="space-y-3">
-            {expList.map((exp, i) => (
-              <div key={i}>
+            {expList.map((exp) => (
+              <div key={exp.id}>
                 <div className="flex justify-between">
                   <p className="font-semibold text-slate-900">
                     {exp.role || "Role"}
                   </p>
                   <p className="text-xs text-slate-400">
-                    {exp.startDate || ""}
-                    {exp.startDate && (exp.endDate || exp.isCurrent)
-                      ? " - "
-                      : ""}
-                    {exp.isCurrent ? "Present" : exp.endDate || ""}
+                    {formatDateRange(exp.startDate, exp.endDate, exp.isCurrent)}
                   </p>
                 </div>
                 {exp.company && (
@@ -114,15 +150,15 @@ function ResumePreview({ data }) {
           <h3 className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-2">
             Education
           </h3>
-          {eduList.map((edu, i) => (
-            <div key={i}>
+          {eduList.map((edu) => (
+            <div key={edu.id}>
               <p className="font-semibold text-slate-900">
                 {edu.degree || "Degree"}
               </p>
               <p className="text-slate-500 text-xs">
                 {edu.institution || ""}
                 {edu.startYear || edu.endYear
-                  ? ` · ${edu.startYear || ""} - ${edu.endYear || ""}`
+                  ? ` · ${formatDateRange(edu.startYear, edu.endYear, false)}`
                   : ""}
               </p>
             </div>
@@ -130,7 +166,7 @@ function ResumePreview({ data }) {
         </div>
       )}
       {skills.length > 0 && (
-        <div>
+        <div className="mb-4">
           <h3 className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-2">
             Skills
           </h3>
@@ -142,6 +178,49 @@ function ResumePreview({ data }) {
               >
                 {s}
               </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {projectList.length > 0 && (
+        <div className="mb-4">
+          <h3 className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-2">
+            Projects
+          </h3>
+          <div className="space-y-2">
+            {projectList.map((p) => (
+              <div key={p.id}>
+                <p className="font-semibold text-slate-900">
+                  {p.name || "Project"}
+                </p>
+                {p.technologies && (
+                  <p className="text-xs text-slate-400">{p.technologies}</p>
+                )}
+                {p.description && (
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {p.description}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {certList.length > 0 && (
+        <div>
+          <h3 className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-2">
+            Certifications
+          </h3>
+          <div className="space-y-2">
+            {certList.map((c) => (
+              <div key={c.id}>
+                <p className="font-semibold text-slate-900">
+                  {c.name || "Certification"}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {[c.issuer, c.issueDate].filter(Boolean).join(" · ")}
+                </p>
+              </div>
             ))}
           </div>
         </div>
@@ -159,6 +238,8 @@ const BLANK_EXP = {
   description: "",
 };
 const BLANK_EDU = { degree: "", institution: "", startYear: "", endYear: "" };
+const BLANK_PROJECT = { name: "", description: "", technologies: "", link: "" };
+const BLANK_CERT = { name: "", issuer: "", issueDate: "", credentialUrl: "" };
 
 function toResumePayload(data) {
   const skills =
@@ -180,13 +261,13 @@ function toResumePayload(data) {
       email: data.email || "",
       phone: data.phone || "",
       location: data.location || "",
-      portfolio: data.portfolio || "",
+      portfolio: normalizeUrl(data.portfolio) || data.portfolio || "",
     },
     name: data.name || "",
     email: data.email || "",
     phone: data.phone || "",
     location: data.location || "",
-    portfolio: data.portfolio || "",
+    portfolio: normalizeUrl(data.portfolio) || data.portfolio || "",
     experience: (data.experience || []).filter(
       (exp) =>
         exp.role ||
@@ -199,10 +280,12 @@ function toResumePayload(data) {
       (edu) => edu.degree || edu.institution || edu.startYear || edu.endYear,
     ),
     skills,
-    projects: Array.isArray(data.projects) ? data.projects : [],
-    certifications: Array.isArray(data.certifications)
-      ? data.certifications
-      : [],
+    projects: (data.projects || []).filter(
+      (p) => p.name || p.description || p.technologies || p.link,
+    ),
+    certifications: (data.certifications || []).filter(
+      (c) => c.name || c.issuer || c.issueDate || c.credentialUrl,
+    ),
   };
 }
 
@@ -221,12 +304,19 @@ export default function ResumeBuilder() {
     location: "",
     portfolio: "",
     summary: "",
-    experience: [{ ...BLANK_EXP }],
-    education: [{ ...BLANK_EDU }],
+    experience: [{ ...BLANK_EXP, id: makeId() }],
+    education: [{ ...BLANK_EDU, id: makeId() }],
     skills: "",
+    projects: [{ ...BLANK_PROJECT, id: makeId() }],
+    certifications: [{ ...BLANK_CERT, id: makeId() }],
   });
 
-  const { data: resumeData, isLoading } = useQuery({
+  const {
+    data: resumeData,
+    isLoading,
+    isError: isLoadError,
+    refetch: refetchResume,
+  } = useQuery({
     queryKey: ["resume", "me"],
     queryFn: () => resumeService.getMyResume(),
     staleTime: 1000 * 60 * 5,
@@ -247,21 +337,30 @@ export default function ResumeBuilder() {
           location: personal.location || "",
           portfolio: personal.portfolio || "",
           summary: resume.summary || "",
-          experience:
+          experience: withIds(
             Array.isArray(resume.experience) && resume.experience.length
               ? resume.experience
               : [{ ...BLANK_EXP }],
-          education:
+          ),
+          education: withIds(
             Array.isArray(resume.education) && resume.education.length
               ? resume.education
               : [{ ...BLANK_EDU }],
+          ),
           skills: Array.isArray(resume.skills)
             ? resume.skills.join(", ")
             : resume.skills || "",
-          projects: Array.isArray(resume.projects) ? resume.projects : [],
-          certifications: Array.isArray(resume.certifications)
-            ? resume.certifications
-            : [],
+          projects: withIds(
+            Array.isArray(resume.projects) && resume.projects.length
+              ? resume.projects
+              : [{ ...BLANK_PROJECT }],
+          ),
+          certifications: withIds(
+            Array.isArray(resume.certifications) &&
+              resume.certifications.length
+              ? resume.certifications
+              : [{ ...BLANK_CERT }],
+          ),
         });
       } else {
         setData((d) => ({ ...d, email: user?.email || "" }));
@@ -276,12 +375,12 @@ export default function ResumeBuilder() {
     mutationFn: () => resumeService.saveResume(toResumePayload(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["resume", "me"] });
-      toast.success("Resume saved", "Your resume draft has been saved.");
+      toast.success("Resume saved", "Resume draft saved successfully.");
     },
     onError: (err) =>
       toast.error(
         "Save failed",
-        err.message || "Could not save your resume draft.",
+        err.message || "Could not save your resume. Please try again.",
       ),
   });
 
@@ -298,7 +397,10 @@ export default function ResumeBuilder() {
     });
 
   const addExp = () =>
-    setData((d) => ({ ...d, experience: [...d.experience, { ...BLANK_EXP }] }));
+    setData((d) => ({
+      ...d,
+      experience: [...d.experience, { ...BLANK_EXP, id: makeId() }],
+    }));
   const removeExp = (i) =>
     setData((d) => ({
       ...d,
@@ -313,16 +415,55 @@ export default function ResumeBuilder() {
     });
 
   const addEdu = () =>
-    setData((d) => ({ ...d, education: [...d.education, { ...BLANK_EDU }] }));
+    setData((d) => ({
+      ...d,
+      education: [...d.education, { ...BLANK_EDU, id: makeId() }],
+    }));
   const removeEdu = (i) =>
     setData((d) => ({
       ...d,
       education: d.education.filter((_, j) => j !== i),
     }));
 
+  const updateProject = (i, field, value) =>
+    setData((d) => {
+      const projects = [...d.projects];
+      projects[i] = { ...projects[i], [field]: value };
+      return { ...d, projects };
+    });
+
+  const addProject = () =>
+    setData((d) => ({
+      ...d,
+      projects: [...d.projects, { ...BLANK_PROJECT, id: makeId() }],
+    }));
+  const removeProject = (i) =>
+    setData((d) => ({
+      ...d,
+      projects: d.projects.filter((_, j) => j !== i),
+    }));
+
+  const updateCert = (i, field, value) =>
+    setData((d) => {
+      const certifications = [...d.certifications];
+      certifications[i] = { ...certifications[i], [field]: value };
+      return { ...d, certifications };
+    });
+
+  const addCert = () =>
+    setData((d) => ({
+      ...d,
+      certifications: [...d.certifications, { ...BLANK_CERT, id: makeId() }],
+    }));
+  const removeCert = (i) =>
+    setData((d) => ({
+      ...d,
+      certifications: d.certifications.filter((_, j) => j !== i),
+    }));
+
   const handleDownloadPdf = async () => {
     if (!data.name.trim()) {
-      setValidationError("Full name is required before downloading your PDF.");
+      setValidationError("Add your full name before downloading the resume.");
       toast.error(
         "Missing resume name",
         "Please enter your full name before downloading.",
@@ -351,16 +492,21 @@ export default function ResumeBuilder() {
         data.name
           .trim()
           .replace(/[^a-z0-9]+/gi, "_")
-          .replace(/^_|_$/g, "") || "User";
+          .replace(/^_|_$/g, "") || "";
       link.href = url;
-      link.download = `LocalSkill_Resume_${safeName}.pdf`;
+      link.download = safeName
+        ? `LocalSkill_Resume_${safeName}.pdf`
+        : "LocalSkill_Resume.pdf";
       document.body.appendChild(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
       toast.success("PDF ready", "Your resume PDF has been downloaded.");
     } catch {
-      toast.error("PDF failed", "Could not generate PDF. Please try again.");
+      toast.error(
+        "PDF failed",
+        "Could not generate the PDF. Please try again.",
+      );
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -369,6 +515,27 @@ export default function ResumeBuilder() {
   if (isLoading) {
     return (
       <div className="max-w-7xl mx-auto animate-pulse bg-white border border-slate-200 rounded-xl h-96" />
+    );
+  }
+
+  if (isLoadError) {
+    return (
+      <div className="max-w-7xl mx-auto">
+        <Alert
+          type="error"
+          title="Could not load your saved resume"
+          message="Please check your connection and try again."
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          icon={RefreshCw}
+          className="mt-4"
+          onClick={() => refetchResume()}
+        >
+          Retry
+        </Button>
+      </div>
     );
   }
 
@@ -417,7 +584,7 @@ export default function ResumeBuilder() {
       {saveMutation.isSuccess && (
         <Alert
           type="success"
-          message="Resume draft saved to your profile."
+          message="Resume draft saved successfully."
           dismissible
           className="mb-6"
         />
@@ -425,7 +592,7 @@ export default function ResumeBuilder() {
       {saveMutation.isError && (
         <Alert
           type="error"
-          message="Failed to save. Please try again."
+          message="Could not save your resume. Please try again."
           dismissible
           className="mb-6"
         />
@@ -438,6 +605,7 @@ export default function ResumeBuilder() {
             {tabs.map((tab, i) => (
               <button
                 key={tab}
+                type="button"
                 onClick={() => setActiveTab(i)}
                 className={cn(
                   "px-4 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition-all",
@@ -488,6 +656,7 @@ export default function ResumeBuilder() {
                   label="Portfolio / Website"
                   value={data.portfolio || ""}
                   onChange={setField("portfolio")}
+                  hint="e.g. linkedin.com/in/you — https:// is added automatically"
                 />
                 <Textarea
                   label="Professional Summary"
@@ -503,11 +672,13 @@ export default function ResumeBuilder() {
               <div className="space-y-4">
                 {data.experience.map((exp, i) => (
                   <div
-                    key={i}
+                    key={exp.id}
                     className="border border-slate-200 rounded-xl p-4 relative"
                   >
                     {data.experience.length > 1 && (
                       <button
+                        type="button"
+                        aria-label="Remove experience entry"
                         onClick={() => removeExp(i)}
                         className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                       >
@@ -588,11 +759,13 @@ export default function ResumeBuilder() {
               <div className="space-y-4">
                 {data.education.map((edu, i) => (
                   <div
-                    key={i}
+                    key={edu.id}
                     className="border border-slate-200 rounded-xl p-4 relative"
                   >
                     {data.education.length > 1 && (
                       <button
+                        type="button"
+                        aria-label="Remove education entry"
                         onClick={() => removeEdu(i)}
                         className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                       >
@@ -654,6 +827,133 @@ export default function ResumeBuilder() {
             )}
 
             {activeTab === 4 && (
+              <div className="space-y-4">
+                {data.projects.map((project, i) => (
+                  <div
+                    key={project.id}
+                    className="border border-slate-200 rounded-xl p-4 relative"
+                  >
+                    {data.projects.length > 1 && (
+                      <button
+                        type="button"
+                        aria-label="Remove project entry"
+                        onClick={() => removeProject(i)}
+                        className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <Input
+                        label="Project Name"
+                        value={project.name}
+                        onChange={(e) =>
+                          updateProject(i, "name", e.target.value)
+                        }
+                      />
+                      <Input
+                        label="Technologies"
+                        value={project.technologies}
+                        onChange={(e) =>
+                          updateProject(i, "technologies", e.target.value)
+                        }
+                        hint="Comma separated"
+                      />
+                    </div>
+                    <Input
+                      label="Project Link"
+                      className="mt-3"
+                      value={project.link}
+                      onChange={(e) =>
+                        updateProject(i, "link", e.target.value)
+                      }
+                    />
+                    <Textarea
+                      label="Description"
+                      rows={3}
+                      className="mt-3"
+                      value={project.description}
+                      onChange={(e) =>
+                        updateProject(i, "description", e.target.value)
+                      }
+                    />
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  fullWidth
+                  icon={Plus}
+                  onClick={addProject}
+                >
+                  Add Project
+                </Button>
+              </div>
+            )}
+
+            {activeTab === 5 && (
+              <div className="space-y-4">
+                {data.certifications.map((cert, i) => (
+                  <div
+                    key={cert.id}
+                    className="border border-slate-200 rounded-xl p-4 relative"
+                  >
+                    {data.certifications.length > 1 && (
+                      <button
+                        type="button"
+                        aria-label="Remove certification entry"
+                        onClick={() => removeCert(i)}
+                        className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <Input
+                        label="Certification Name"
+                        value={cert.name}
+                        onChange={(e) =>
+                          updateCert(i, "name", e.target.value)
+                        }
+                      />
+                      <Input
+                        label="Issuer"
+                        value={cert.issuer}
+                        onChange={(e) =>
+                          updateCert(i, "issuer", e.target.value)
+                        }
+                      />
+                      <Input
+                        label="Issue Date"
+                        type="month"
+                        value={cert.issueDate}
+                        onChange={(e) =>
+                          updateCert(i, "issueDate", e.target.value)
+                        }
+                      />
+                      <Input
+                        label="Credential URL"
+                        value={cert.credentialUrl}
+                        onChange={(e) =>
+                          updateCert(i, "credentialUrl", e.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  fullWidth
+                  icon={Plus}
+                  onClick={addCert}
+                >
+                  Add Certification
+                </Button>
+              </div>
+            )}
+
+            {activeTab === 6 && (
               <div className="text-center py-6">
                 <p className="text-sm text-slate-500">
                   Preview shown on the right →
