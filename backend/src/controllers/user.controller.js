@@ -13,15 +13,15 @@ async function getProfile(req, res) {
 }
 
 async function updateProfile(req, res) {
-  const { firstName, lastName, phone, district, address, bio } = req.body
+  const { firstName, lastName, title, phone, district, address, bio, linkedin, github, website } = req.body
   const profile = await prisma.jobSeekerProfile.upsert({
     where: { userId: req.user.id },
-    update: { firstName, lastName, phone, district, address, bio },
+    update: { firstName, lastName, title, phone, district, address, bio, linkedin, github, website },
     create: {
       userId: req.user.id,
       firstName: firstName || '',
       lastName: lastName || '',
-      phone, district, address, bio,
+      title, phone, district, address, bio, linkedin, github, website,
       skills: [],
     },
   })

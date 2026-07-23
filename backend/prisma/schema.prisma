@@ -100,10 +100,14 @@ model JobSeekerProfile {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   firstName String
   lastName  String
+  title     String?
   phone     String?
   district  String?
   address   String?
   bio       String?
+  linkedin  String?
+  github    String?
+  website   String?
   avatarUrl String?
   resumeUrl String?
   skills    String[]

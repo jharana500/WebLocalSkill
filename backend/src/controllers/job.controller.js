@@ -39,7 +39,7 @@ function validateJobContent(data) {
 
 async function getJobs(req, res) {
   const {
-    page = 1, limit = 10, q, category, jobType, district,
+    page = 1, limit = 10, q, category, jobType, experience, district,
     minSalary, maxSalary, sort = 'latest',
   } = req.query
 
@@ -55,7 +55,10 @@ async function getJobs(req, res) {
   }
   if (category) where.category = category
   if (jobType) where.jobType = jobType.toUpperCase()
+  if (experience) where.experience = experience
   if (district) where.district = district
+  if (minSalary) where.salaryMax = { gte: Number.parseInt(minSalary, 10) }
+  if (maxSalary) where.salaryMin = { lte: Number.parseInt(maxSalary, 10) }
 
   const orderBy = sort === 'latest' ? { createdAt: 'desc' }
     : sort === 'featured' ? [{ isFeatured: 'desc' }, { createdAt: 'desc' }]
