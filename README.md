@@ -34,6 +34,29 @@ cp .env.example .env  # defaults to http://localhost:5000/api, edit if needed
 npm run dev           # starts the app on http://localhost:5173, proxies /api to the backend
 ```
 
+### Moving to a new machine
+
+Changing laptops does not require recreating migrations — the existing history in `backend/prisma/migrations/` is the source of truth for the schema. A new machine only needs:
+
+1. PostgreSQL installed and running.
+2. A new (or restored) local database and a dedicated app role — don't reuse another machine's credentials or run as the `postgres` superuser.
+3. A fresh `DATABASE_URL` (and other secrets) in a new local `.env` — never copy `.env` between machines.
+4. `npm install` (or `npm ci`) in both `backend/` and `frontend/`.
+5. `npx prisma generate` to build the client for this machine.
+6. `npx prisma migrate deploy` to apply the existing migrations to the new database — never `prisma migrate reset`.
+
+`scripts/setup-local.ps1` automates steps 4-6 (and scaffolds `.env` files from the `.env.example` templates). `scripts/start-local.ps1` verifies PostgreSQL is reachable and launches both dev servers. Both are idempotent and never drop data or reset migration history.
+
+### Common setup errors
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Cannot find module '.prisma/client/default'` | Prisma client was never generated on this machine | `cd backend && npx prisma generate` |
+| `P1001: Can't reach database server` | PostgreSQL isn't running or `DATABASE_URL` is wrong | Confirm the service is running and the host/port/credentials in `backend/.env` are correct |
+| `password authentication failed` | Wrong DB credentials, or reused another machine's `.env` | Create a local role/database and point `DATABASE_URL` at it — see [Setup](#setup-new-machine) |
+| Frontend can't reach the API / CORS errors | `CLIENT_URL` (backend) and the port Vite actually started on don't match | Free up port 5173, or update `CLIENT_URL` to match the port Vite reports |
+| `EADDRINUSE` on port 5000 or 5173 | Another process (often a leftover dev server) already holds the port | Find it with `netstat -ano | findstr :5000` and stop it, or change `PORT` |
+
 There is no seed script — create your first accounts through the app's registration flow (`/register`). Admin accounts cannot be self-registered (see [ARCHITECTURE.md](ARCHITECTURE.md#authentication--roles)); create one directly in the database if you need to test the admin dashboard:
 
 ```bash
@@ -62,6 +85,20 @@ const prisma = require('./src/lib/prisma');
 | `npm run dev` | `frontend/` | Start the Vite dev server |
 | `npm run build` | `frontend/` | Production build to `frontend/dist/` |
 | `npm run lint` | `frontend/` | Run ESLint |
+
+## Jest and Supertest Demonstration
+
+`backend/tests/phase-demo.test.js` is a standalone Jest + Supertest suite kept separate from the real test suite (`backend/test/`, run via `npm test`). It exists purely to demonstrate what passing and failing API tests look like side by side.
+
+```bash
+cd backend
+npm run test:demo
+```
+
+- Exactly 10 tests execute.
+- 7 pass: real assertions against actual API behavior (health check, JSON content type, login validation, missing-token rejection, unknown-route 404, register validation, unimplemented refresh endpoint).
+- 3 fail intentionally: each is named `INTENTIONAL FAIL: ...` and asserts the opposite of the real, correct behavior (e.g. expecting a protected route to return 200 without a token). These are deliberately wrong expectations, not application bugs.
+- `npm run test:demo` therefore always exits with a non-zero code by design. **Do not** wire it into CI or use it as a quality gate — use `npm test` for that.
 
 ### Migrating in a non-interactive environment
 
