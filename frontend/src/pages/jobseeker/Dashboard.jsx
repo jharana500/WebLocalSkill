@@ -110,7 +110,7 @@ export default function JobSeekerDashboard() {
   const recommendedJobs = data?.recommendedJobs ?? []
   const recentApplications = data?.recentApplications ?? []
 
-  const firstName = user?.profile?.firstName || user?.name || 'there'
+  const firstName = user?.fullName?.split(' ')[0] || 'there'
 
   return (
     <div className="max-w-7xl mx-auto animate-fade-in">

@@ -120,9 +120,9 @@ function Sidebar({ collapsed, onToggle }) {
       <div className={cn('border-t border-slate-800 p-3', collapsed && 'flex justify-center')}>
         {!collapsed ? (
           <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800 cursor-pointer group">
-            <Avatar src={user?.avatar} name={user?.name} size="sm" />
+            <Avatar src={user?.avatarUrl} name={user?.fullName} size="sm" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-200 truncate">{user?.name || 'Admin'}</p>
+              <p className="text-sm font-medium text-slate-200 truncate">{user?.fullName || 'Admin'}</p>
               <p className="text-xs text-slate-500 truncate">Administrator</p>
             </div>
             <button onClick={logout} className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-400 hover:text-red-400 transition-all">
@@ -130,7 +130,7 @@ function Sidebar({ collapsed, onToggle }) {
             </button>
           </div>
         ) : (
-          <Avatar src={user?.avatar} name={user?.name} size="sm" />
+          <Avatar src={user?.avatarUrl} name={user?.fullName} size="sm" />
         )}
       </div>
     </aside>
@@ -160,9 +160,9 @@ function TopBar({ onMobileMenuOpen }) {
           align="right"
           trigger={
             <button className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-100">
-              <Avatar src={user?.avatar} name={user?.name} size="sm" />
+              <Avatar src={user?.avatarUrl} name={user?.fullName} size="sm" />
               <div className="hidden sm:block text-left">
-                <p className="text-sm font-medium text-slate-900 leading-tight">{user?.name || 'Admin'}</p>
+                <p className="text-sm font-medium text-slate-900 leading-tight">{user?.fullName || 'Admin'}</p>
                 <p className="text-xs text-slate-500 leading-tight">Administrator</p>
               </div>
             </button>

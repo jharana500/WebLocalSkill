@@ -50,7 +50,7 @@ function Sidebar({ collapsed, onToggle }) {
       {!collapsed && (
         <div className="px-4 py-3 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
-            <Avatar src={user?.company?.logo} name={user?.company?.name || user?.name} size="sm" />
+            <Avatar src={user?.company?.logoUrl} name={user?.company?.name || user?.fullName} size="sm" />
             <div className="min-w-0">
               <p className="text-xs font-semibold text-slate-900 truncate">{user?.company?.name || 'Your Company'}</p>
               <Badge variant={user?.company?.isVerified ? 'success' : 'warning'} size="xs">
@@ -119,7 +119,7 @@ function TopBar({ onMobileMenuOpen }) {
           align="right"
           trigger={
             <button className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-100 transition-colors">
-              <Avatar src={user?.company?.logo} name={user?.company?.name || user?.name} size="sm" />
+              <Avatar src={user?.company?.logoUrl} name={user?.company?.name || user?.fullName} size="sm" />
               <div className="hidden sm:block text-left">
                 <p className="text-sm font-medium text-slate-900 leading-tight">{user?.company?.name || 'Company'}</p>
                 <p className="text-xs text-slate-500 leading-tight">Recruiter</p>

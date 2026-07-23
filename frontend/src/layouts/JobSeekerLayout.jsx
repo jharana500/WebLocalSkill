@@ -76,12 +76,12 @@ function Sidebar({ collapsed, onToggle }) {
 
       <div className={cn('border-t border-slate-100 p-3', collapsed && 'flex justify-center')}>
         {collapsed ? (
-          <Avatar src={user?.avatar} name={user?.name} size="sm" />
+          <Avatar src={user?.avatarUrl} name={user?.fullName} size="sm" />
         ) : (
           <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer group">
-            <Avatar src={user?.avatar} name={user?.name} size="sm" />
+            <Avatar src={user?.avatarUrl} name={user?.fullName} size="sm" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-900 truncate">{user?.name || 'User'}</p>
+              <p className="text-sm font-medium text-slate-900 truncate">{user?.fullName || 'User'}</p>
               <p className="text-xs text-slate-500 truncate">{user?.email}</p>
             </div>
             <button
@@ -123,9 +123,9 @@ function TopBar({ onMobileMenuOpen }) {
           align="right"
           trigger={
             <button className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-100 transition-colors">
-              <Avatar src={user?.avatar} name={user?.name} size="sm" />
+              <Avatar src={user?.avatarUrl} name={user?.fullName} size="sm" />
               <div className="hidden sm:block text-left">
-                <p className="text-sm font-medium text-slate-900 leading-tight">{user?.name || 'User'}</p>
+                <p className="text-sm font-medium text-slate-900 leading-tight">{user?.fullName || 'User'}</p>
                 <p className="text-xs text-slate-500 leading-tight">Job Seeker</p>
               </div>
             </button>
@@ -183,9 +183,9 @@ function MobileMenu({ open, onClose }) {
         </nav>
         <div className="border-t border-slate-100 p-4">
           <div className="flex items-center gap-3 mb-3">
-            <Avatar src={user?.avatar} name={user?.name} size="md" />
+            <Avatar src={user?.avatarUrl} name={user?.fullName} size="md" />
             <div>
-              <p className="text-sm font-medium text-slate-900">{user?.name}</p>
+              <p className="text-sm font-medium text-slate-900">{user?.fullName}</p>
               <p className="text-xs text-slate-500">{user?.email}</p>
             </div>
           </div>

@@ -1,19 +1,31 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Mail, ArrowRight, CheckCircle2 } from 'lucide-react'
-import { Button } from '@/components/ui'
+import { Button, Alert } from '@/components/ui'
 import { Input } from '@/components/ui/Input'
+import { authService } from '@/services/authService'
 
 export default function ForgotPassword() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    setError('')
     setLoading(true)
-    setTimeout(() => { setLoading(false); setSent(true) }, 1200)
+    try {
+      await authService.forgotPassword(email)
+      setSent(true)
+    } catch (err) {
+      setError(
+        err?.message || 'Unable to send reset instructions right now. Please try again.',
+      )
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (sent) {
@@ -24,14 +36,14 @@ export default function ForgotPassword() {
         </div>
         <h2 className="text-xl font-bold text-slate-900 mb-2">Check your inbox</h2>
         <p className="text-sm text-slate-500 mb-6">
-          We've sent a password reset link to <strong>{email}</strong>. The link expires in 30 minutes.
+          If an account exists for <strong>{email}</strong>, we've sent password reset instructions. The link expires in 30 minutes.
         </p>
         <Button variant="primary" fullWidth onClick={() => navigate('/login')}>Back to Sign In</Button>
         <button
           onClick={() => setSent(false)}
           className="mt-4 text-sm text-slate-500 hover:text-slate-700 underline"
         >
-          Resend email
+          Send another link
         </button>
       </div>
     )
@@ -44,6 +56,8 @@ export default function ForgotPassword() {
         <p className="text-slate-500 mt-1.5 text-sm">Enter your email and we'll send you a reset link.</p>
       </div>
 
+      {error && <Alert type="error" message={error} className="mb-5" dismissible onClose={() => setError('')} />}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
           label="Email address"
@@ -54,7 +68,7 @@ export default function ForgotPassword() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        <Button type="submit" variant="primary" size="lg" fullWidth loading={loading} iconRight={ArrowRight}>
+        <Button type="submit" variant="primary" size="lg" fullWidth loading={loading} disabled={loading} iconRight={ArrowRight}>
           Send Reset Link
         </Button>
       </form>

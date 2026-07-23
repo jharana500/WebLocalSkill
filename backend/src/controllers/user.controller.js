@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt')
 const prisma = require('../lib/prisma')
 const { getFileUrl } = require('../middleware/upload')
+const { isValidPassword, PASSWORD_REQUIREMENTS } = require('../utils/validation')
 
 async function getProfile(req, res) {
   const profile = await prisma.jobSeekerProfile.findUnique({
@@ -221,6 +222,9 @@ function calculateProfileCompletion(profile) {
 
 async function changePassword(req, res) {
   const { currentPassword, newPassword } = req.body
+  if (!isValidPassword(newPassword)) {
+    return res.status(400).json({ message: PASSWORD_REQUIREMENTS })
+  }
   const user = await prisma.user.findUnique({ where: { id: req.user.id } })
   const valid = await bcrypt.compare(currentPassword, user.password)
   if (!valid) return res.status(400).json({ message: 'Current password is incorrect' })

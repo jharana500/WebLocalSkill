@@ -1,12 +1,43 @@
+const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const prisma = require("../lib/prisma");
 const { sendError, sendSuccess } = require("../utils/response");
+const { isValidPassword, PASSWORD_REQUIREMENTS } = require("../utils/validation");
+
+const PROFILE_SELECT = {
+  profile: { select: { firstName: true, lastName: true, avatarUrl: true } },
+  company: {
+    select: { id: true, name: true, logoUrl: true, isVerified: true, status: true, plan: true },
+  },
+};
+
+const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 
 function signToken(userId) {
   return jwt.sign({ userId }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || "7d",
   });
+}
+
+function buildUserPayload(user) {
+  const fullName =
+    [user.profile?.firstName, user.profile?.lastName].filter(Boolean).join(" ").trim() ||
+    user.company?.name ||
+    user.email;
+
+  return {
+    id: user.id,
+    fullName,
+    email: user.email,
+    role: user.role.toLowerCase(),
+    avatarUrl: user.profile?.avatarUrl || user.company?.logoUrl || null,
+    ...(user.company ? { company: user.company } : {}),
+  };
+}
+
+function hashResetToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 async function register(req, res) {
@@ -16,6 +47,10 @@ async function register(req, res) {
 
     if (!email || !password || !role) {
       return sendError(res, 400, "Email, password, and role are required");
+    }
+
+    if (!isValidPassword(password)) {
+      return sendError(res, 400, PASSWORD_REQUIREMENTS);
     }
 
     const normalizedRole = role
@@ -60,14 +95,14 @@ async function register(req, res) {
           company: { create: { name: companyName || "" } },
         }),
       },
-      select: { id: true, email: true, role: true },
+      select: { id: true, email: true, role: true, ...PROFILE_SELECT },
     });
 
     const token = signToken(user.id);
     sendSuccess(
       res,
       "Account created successfully",
-      { user: { ...user, role: user.role.toLowerCase() }, token },
+      { user: buildUserPayload(user), token },
       201,
     );
   } catch (error) {
@@ -87,6 +122,7 @@ async function login(req, res) {
     const normalizedEmail = email.trim().toLowerCase();
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
+      select: { id: true, email: true, role: true, password: true, isActive: true, ...PROFILE_SELECT },
     });
 
     // Generic error message to protect user privacy
@@ -100,8 +136,8 @@ async function login(req, res) {
     }
 
     const token = signToken(user.id);
-    sendSuccess(res, "Logged in successfully", {
-      user: { id: user.id, email: user.email, role: user.role.toLowerCase() },
+    sendSuccess(res, "Login successful", {
+      user: buildUserPayload(user),
       token,
     });
   } catch (error) {
@@ -114,38 +150,12 @@ async function getMe(req, res) {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        isActive: true,
-        createdAt: true,
-        profile: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phone: true,
-            district: true,
-            avatarUrl: true,
-          },
-        },
-        company: {
-          select: {
-            id: true,
-            name: true,
-            logoUrl: true,
-            isVerified: true,
-            status: true,
-            plan: true,
-          },
-        },
-      },
+      select: { id: true, email: true, role: true, isActive: true, ...PROFILE_SELECT },
     });
 
     if (!user) return sendError(res, 404, "User not found");
-    sendSuccess(res, "Current user loaded", {
-      user: { ...user, role: user.role.toLowerCase() },
+    sendSuccess(res, "Current user fetched successfully", {
+      user: buildUserPayload(user),
     });
   } catch (error) {
     console.error("GetMe Error:", error);
@@ -160,11 +170,42 @@ async function logout(req, res) {
 async function forgotPassword(req, res) {
   try {
     const { email } = req.body;
-    await prisma.user.findUnique({ where: { email } });
-    sendSuccess(
-      res,
-      "If an account exists with this email, a reset link has been sent",
-    );
+    const neutralMessage =
+      "If an account exists for this email, reset instructions have been sent.";
+
+    if (!email) {
+      return sendError(res, 400, "Email is required");
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (user && user.isActive) {
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = hashResetToken(rawToken);
+
+      await prisma.passwordReset.deleteMany({
+        where: { userId: user.id, usedAt: null },
+      });
+      await prisma.passwordReset.create({
+        data: {
+          userId: user.id,
+          tokenHash,
+          expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
+        },
+      });
+
+      if (process.env.NODE_ENV !== "production") {
+        const resetUrl = `${process.env.CLIENT_URL || "http://localhost:5173"}/reset-password?token=${rawToken}`;
+        console.log(`[dev] Password reset link for ${normalizedEmail}: ${resetUrl}`);
+      }
+
+      // TODO: send the raw token via the project's email service once configured.
+    }
+
+    sendSuccess(res, neutralMessage);
   } catch (error) {
     console.error("Forgot Password Error:", error);
     sendError(res, 500, "Internal server error");
@@ -173,11 +214,45 @@ async function forgotPassword(req, res) {
 
 async function resetPassword(req, res) {
   try {
-    const { token, password } = req.body;
+    const { token, password, confirmPassword } = req.body;
+    const invalidTokenMessage = "The reset link is invalid or has expired.";
+
     if (!token || !password) {
       return sendError(res, 400, "Token and password are required");
     }
-    sendError(res, 501, "Password reset via email is not yet configured");
+    if (confirmPassword !== undefined && password !== confirmPassword) {
+      return sendError(res, 400, "Passwords do not match");
+    }
+    if (!isValidPassword(password)) {
+      return sendError(res, 400, PASSWORD_REQUIREMENTS);
+    }
+
+    const tokenHash = hashResetToken(token);
+    const resetRecord = await prisma.passwordReset.findUnique({
+      where: { tokenHash },
+    });
+
+    if (
+      !resetRecord ||
+      resetRecord.usedAt ||
+      resetRecord.expiresAt < new Date()
+    ) {
+      return sendError(res, 400, invalidTokenMessage);
+    }
+
+    const hashed = await bcrypt.hash(password, 12);
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: resetRecord.userId },
+        data: { password: hashed },
+      }),
+      prisma.passwordReset.update({
+        where: { id: resetRecord.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    sendSuccess(res, "Password reset successfully. Please log in.");
   } catch (error) {
     console.error("Reset Password Error:", error);
     sendError(res, 500, "Internal server error");
