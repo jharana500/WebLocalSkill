@@ -1,4 +1,5 @@
 const prisma = require("../lib/prisma");
+const { buildNotification } = require("../services/notificationService");
 
 async function applyToJob(req, res) {
   const { jobId, coverLetter, resumeUrl } = req.body;
@@ -7,6 +8,10 @@ async function applyToJob(req, res) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job || !job.isActive)
     return res.status(404).json({ message: "Job not found or inactive" });
+  if (job.deadline && job.deadline < new Date())
+    return res
+      .status(400)
+      .json({ message: "The application deadline for this job has passed" });
 
   const existing = await prisma.application.findUnique({
     where: { jobId_userId: { jobId, userId: req.user.id } },
@@ -182,10 +187,27 @@ async function getJobApplications(req, res) {
   });
 }
 
+const ALLOWED_APPLICATION_TRANSITIONS = {
+  PENDING: ["REVIEWING", "SHORTLISTED", "REJECTED"],
+  REVIEWING: ["SHORTLISTED", "REJECTED"],
+  SHORTLISTED: ["HIRED", "REJECTED"],
+  HIRED: [],
+  REJECTED: [],
+  WITHDRAWN: [],
+};
+
+const APPLICATION_STATUS_NOTIFICATION = {
+  REVIEWING: (jobTitle) => `Your application for "${jobTitle}" is now under review.`,
+  SHORTLISTED: (jobTitle) => `You've been shortlisted for "${jobTitle}".`,
+  REJECTED: (jobTitle) => `Your application for "${jobTitle}" was not selected this time.`,
+  HIRED: (jobTitle) => `Congratulations! You've been selected for "${jobTitle}".`,
+};
+
 async function updateApplicationStatus(req, res) {
   const { status, notes } = req.body;
+  const nextStatus = status?.toUpperCase();
   const validStatuses = ["REVIEWING", "SHORTLISTED", "REJECTED", "HIRED"];
-  if (!validStatuses.includes(status?.toUpperCase())) {
+  if (!validStatuses.includes(nextStatus)) {
     return res.status(400).json({ message: "Invalid status" });
   }
 
@@ -196,14 +218,31 @@ async function updateApplicationStatus(req, res) {
 
   const application = await prisma.application.findFirst({
     where: { id: req.params.id, job: { companyId: company.id } },
+    include: { job: { select: { title: true } } },
   });
   if (!application)
     return res.status(404).json({ message: "Application not found" });
 
-  const updated = await prisma.application.update({
-    where: { id: req.params.id },
-    data: { status: status.toUpperCase(), notes },
-  });
+  const allowed = ALLOWED_APPLICATION_TRANSITIONS[application.status] || [];
+  if (!allowed.includes(nextStatus)) {
+    return res.status(409).json({
+      message: `Cannot move an application from ${application.status} to ${nextStatus}`,
+    });
+  }
+
+  const [updated] = await prisma.$transaction([
+    prisma.application.update({
+      where: { id: req.params.id },
+      data: { status: nextStatus, notes },
+    }),
+    buildNotification({
+      userId: application.userId,
+      type: "APPLICATION_STATUS",
+      title: "Application update",
+      message: APPLICATION_STATUS_NOTIFICATION[nextStatus](application.job.title),
+      data: { applicationId: application.id, status: nextStatus },
+    }),
+  ]);
   res.json({ application: updated });
 }
 
