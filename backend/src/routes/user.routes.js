@@ -5,6 +5,14 @@ const { uploadAvatar, uploadResume } = require('../middleware/upload')
 const ctrl = require('../controllers/user.controller')
 
 router.use(authenticate)
+
+// Account-level actions apply to any authenticated role, not just job seekers.
+router.post('/change-password', ctrl.changePassword)
+router.get('/notifications', ctrl.getNotificationPreferences)
+router.put('/notifications', ctrl.updateNotifications)
+router.delete('/account', ctrl.deleteAccount)
+
+// Job-seeker profile management
 router.use(requireRole('job_seeker'))
 
 router.get('/profile', ctrl.getProfile)
@@ -23,8 +31,5 @@ router.put('/experience/:id', ctrl.updateExperience)
 router.delete('/experience/:id', ctrl.removeExperience)
 router.post('/certifications', ctrl.addCertification)
 router.delete('/certifications/:id', ctrl.removeCertification)
-router.post('/change-password', ctrl.changePassword)
-router.put('/notifications', ctrl.updateNotifications)
-router.delete('/account', ctrl.deleteAccount)
 
 module.exports = router

@@ -26,6 +26,7 @@ export const userService = {
   removeCertification: (id) => api.delete(`/user/certifications/${id}`),
   getDashboardData: () => api.get('/user/dashboard'),
   changePassword: (data) => api.post('/user/change-password', data),
+  getNotificationPreferences: () => api.get('/user/notifications'),
   updateNotifications: (settings) => api.put('/user/notifications', settings),
   deleteAccount: () => api.delete('/user/account'),
 }

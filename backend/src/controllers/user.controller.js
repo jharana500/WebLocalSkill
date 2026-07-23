@@ -233,8 +233,21 @@ async function changePassword(req, res) {
   res.json({ message: 'Password changed successfully' })
 }
 
+async function getNotificationPreferences(req, res) {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { notificationPreferences: true },
+  })
+  res.json({ settings: user?.notificationPreferences || {} })
+}
+
 async function updateNotifications(req, res) {
-  res.json({ message: 'Notification settings updated', settings: req.body })
+  const user = await prisma.user.update({
+    where: { id: req.user.id },
+    data: { notificationPreferences: req.body },
+    select: { notificationPreferences: true },
+  })
+  res.json({ message: 'Notification settings updated', settings: user.notificationPreferences })
 }
 
 async function deleteAccount(req, res) {
@@ -248,5 +261,5 @@ module.exports = {
   addEducation, updateEducation, removeEducation,
   addExperience, updateExperience, removeExperience,
   addCertification, removeCertification,
-  getDashboardData, changePassword, updateNotifications, deleteAccount,
+  getDashboardData, changePassword, getNotificationPreferences, updateNotifications, deleteAccount,
 }
