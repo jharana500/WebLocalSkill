@@ -1,5 +1,18 @@
 # LocalSkill Bug Fix Report
 
+## Admin Company Verification — Real Bugs Found (Phase 4)
+
+Unlike Phase 1, this audit found genuine, previously-shipped bugs in the admin company verification area:
+
+1. **The admin "Approve Verification"/"Revoke Verification" button never worked.** `AdminCompanyDetails.jsx` called `adminService.updateCompanyStatus(id, company.isVerified ? 'REJECTED' : 'APPROVED')` → `PATCH /api/admin/companies/:id/status`, but that endpoint's backend only ever accepted `['ACTIVE', 'SUSPENDED', 'PENDING']` — a completely different field (`CompanyStatus`, account standing) from verification status. Every click on this button returned `400 Invalid status` and did nothing. Replaced with working `verify`/`reject`/`mark-duplicate`/`restore` actions against the new dedicated endpoints.
+2. **`registrationNumber` was collected by the company-side verification form and silently discarded.** `Verification.jsx` already sent `form.append('registrationNumber', regNumber)`, but `submitVerification` never read it from `req.body` and `CompanyVerification` had no column for it. Fixed by adding the column and reading the field.
+3. **`Company.isVerified` was never cleared on re-review.** The old `reviewVerification` handler set `isVerified: true` on approval but had no code path to set it back to `false` on a later rejection — a company approved once and later rejected would incorrectly keep showing a verified badge. The new transition engine sets `isVerified` explicitly on every transition, not just approval.
+4. **`createJob` blocked unverified companies from creating any job, including drafts.** Stricter than intended — an unverified company had no way to prepare a job listing in advance of verification. Relaxed to allow draft creation (`isActive: false`), only blocking an explicit publish attempt.
+
+Found via full audit of `admin.controller.js`, `company.controller.js`, `job.controller.js`, and their frontend callers — see `ADMIN_COMPANY_VERIFICATION.md` for the complete audit and `PHASE_4_COMPLETION_REPORT.md` for verification details.
+
+---
+
 ## Resume PDF Export — Root Cause Investigation (Phase 3)
 
 Phase 3's brief described a specific set of PDF-export symptoms: sidebar/navbar/dashboard chrome appearing in the exported PDF, the browser URL/date footer/page title leaking in, and broken date-range characters (`2022 � Present`). The described likely causes were `window.print()` on the whole page, `html2canvas` capturing `document.body`, a ref attached to the dashboard container, or an unsupported dash character.

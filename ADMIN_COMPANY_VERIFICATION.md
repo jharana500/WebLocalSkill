@@ -85,3 +85,16 @@ VERIFIED      -> UNDER_REVIEW
 ```
 
 A same-status transition (e.g. `VERIFIED` → `VERIFIED`) is rejected with a readable `400` rather than silently creating a no-op audit entry.
+
+---
+
+## Resolution (post-implementation)
+
+Everything above was implemented as designed, with two adjustments discovered during live testing (not just code review — every endpoint was exercised against a running server and a real Postgres database before being called done):
+
+1. **`getCompanyById`'s post-transition refetch initially omitted `duplicateOfCompany`.** Caught live: marking a company DUPLICATE returned a response where `verification.duplicateOfCompany` was `undefined` even though the database write succeeded. Fixed by adding it to the refetch's `include`.
+2. **Duplicate-check test data hygiene**: an "unrelated company" test case initially failed because every test account in this suite shares the `@test.local` email domain, which the detector correctly treats as a (weak, LOW-risk) signal — that's the algorithm working as designed, not a bug. Fixed by giving the "genuinely unrelated" test company a distinct email domain rather than weakening the detector.
+
+Live-verified end-to-end with real accounts (two companies registered as near-duplicates of each other, "Local Skill Pvt. Ltd." and "LocalSkill Private Limited"): duplicate-check correctly found the match (`MEDIUM` risk, name similarity + owner email domain), the full transition chain (`PENDING → UNDER_REVIEW → VERIFIED`, `PENDING → UNDER_REVIEW → DUPLICATE → PENDING`) worked exactly per the table above, self-reference and circular-duplicate guards both blocked correctly, and `Company.isVerified` flipped `true`/`false` in lockstep with every transition — including on `REJECTED`, closing gap #7 from the audit (previously `isVerified` was never cleared on re-review).
+
+See `PHASE_4_COMPLETION_REPORT.md` for the full commit-by-commit accounting and test results.

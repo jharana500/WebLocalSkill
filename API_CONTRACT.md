@@ -1,6 +1,6 @@
 # API Contract
 
-Scope: `/api/auth/*` (Phase 2) and `/api/resumes/*` (Phase 3). Other endpoint groups (`/api/company`, `/api/applications`, `/api/billing`, etc.) are not yet documented here — this file is a starting point, not a full contract, and should be extended as later phases touch other routes.
+Scope: `/api/auth/*` (Phase 2), `/api/resumes/*` (Phase 3), `/api/admin/companies/*` and the verification-related parts of `/api/jobs` (Phase 4). Other endpoint groups (`/api/applications`, `/api/billing`, etc.) are not yet documented here — this file is a starting point, not a full contract, and should be extended as later phases touch other routes.
 
 All responses share the same envelope:
 
@@ -106,3 +106,74 @@ Both create-or-update (upsert) the caller's single resume — `PATCH` is an alia
 ### `DELETE /api/resumes/me`
 
 Deletes the caller's resume if one exists; a safe no-op (still `200`) if not. No frontend UI calls this yet — added for API completeness per the Phase 3 brief's preferred endpoint list.
+
+---
+
+## Admin — Company Verification & Duplicate Review
+
+All routes require auth + `ADMIN` role (`403` otherwise). Ownership/ID for every action is read from `req.params.id` (a `Company.id`) and `req.user.id` (the acting admin) — a company owner cannot call any of these, and cannot set `reviewedById`/`duplicateOfCompanyId`/verification status directly through their own profile endpoints.
+
+### `GET /api/admin/companies`
+
+Query params: `q` (searches name/industry/district/owner email/registration number/PAN), `status` (`CompanyStatus` — account standing), `plan`, `verificationStatus` (`VerificationStatus`), `duplicateRisk` (`LOW`|`MEDIUM`|`HIGH` — computes risk per company in the filtered set, so this is heavier than a plain list and bounded to 500 candidates), `page`, `limit` (max 100), `sortBy` (whitelisted: `createdAt`|`name`|`updatedAt`), `sortOrder`.
+
+```json
+{ "success": true, "message": "Companies fetched successfully",
+  "data": { "companies": [], "pagination": { "page": 1, "limit": 10, "total": 0, "totalPages": 0 } } }
+```
+
+### `GET /api/admin/companies/:id`
+
+Returns `{ company, applicationCount, auditLog }` — `company` includes owner (safe fields only — no password/JWT), verification (with `reviewedBy` and `duplicateOfCompany`), recent jobs with application counts, and `duplicateFlaggedBy` (other companies pointing here). `auditLog` is the 20 most recent review actions for this company.
+
+### `GET /api/admin/companies/:id/duplicate-check`
+
+Runs `companyDuplicateService.analyzeDuplicateRisk()` live (nothing is cached/precomputed). Response shape:
+
+```json
+{ "success": true, "message": "Duplicate analysis completed",
+  "data": {
+    "company": { "id": "...", "name": "...", "details": { "...comparable fields for the UI comparison view" } },
+    "riskLevel": "HIGH", "riskScore": 92,
+    "matches": [ { "companyId": "...", "companyName": "...", "score": 92, "riskLevel": "HIGH", "reasons": [...], "details": {...} } ]
+  } }
+```
+
+`matches` never includes the company itself, is sorted by score descending, and each match's `reasons` is a plain-English list (e.g. `"Registration number matches"`) — never a raw score breakdown. See `ADMIN_COMPANY_VERIFICATION.md` for the full scoring rules.
+
+### `GET /api/admin/companies/:id/audit-log`
+
+Standalone version of the `auditLog` array also embedded in the detail response, for when only the history is needed.
+
+### `PATCH /api/admin/companies/:id/status`
+
+Pre-existing, unrelated to verification — updates `CompanyStatus` (`ACTIVE`/`SUSPENDED`/`PENDING`), the account-standing field.
+
+### `PATCH /api/admin/companies/:id/under-review`, `/verify`, `/reject`, `/mark-duplicate`, `/restore`
+
+All five share one transition engine (`transitionCompanyVerification`) that, in a single `$transaction`: validates the status transition against the allowed-transitions table (`ADMIN_COMPANY_VERIFICATION.md`), upserts `CompanyVerification`, flips `Company.isVerified` (`true` only for `VERIFIED`), writes an `AdminAuditLog` row, and writes a `Notification` for the company owner. A same-status request (e.g. verifying an already-`VERIFIED` company) is rejected with `400` rather than silently no-op'ing.
+
+- `/reject` requires `{ "reason": "..." }`, 5–1000 characters after trimming → `400` otherwise.
+- `/mark-duplicate` requires `{ "duplicateOfCompanyId": "...", "reason": "..." }`. Rejects self-reference and direct circular references (`A` dup-of `B` while `B` is already dup-of `A`) with `400`.
+- `/restore` accepts `{ "status": "PENDING" | "UNDER_REVIEW", "reason": "..." }` (defaults to `PENDING`); any other status is rejected.
+- `/under-review` and `/verify` accept an optional `{ "reason": "..." }`.
+
+Success response (all five):
+
+```json
+{ "success": true, "message": "Company verified successfully",
+  "data": { "company": { "...", "isVerified": true, "verification": { "status": "VERIFIED", "reviewedBy": {...}, "duplicateOfCompany": null } } } }
+```
+
+Errors: `404` company not found, `400` invalid/no-op transition or validation failure, `403` non-admin.
+
+---
+
+## Jobs — verification restrictions (Phase 4)
+
+`POST /api/jobs` now accepts an optional `isActive` in the body (previously ignored — new jobs always published immediately). An unverified company (any `verificationStatus` other than `VERIFIED`) may still create a job, but:
+
+- `isActive: false` or omitted → created as a draft, `201`.
+- `isActive: true` while unverified → `403` `"Your company must be verified before publishing jobs."`, nothing is created.
+
+`PATCH /api/jobs/:id/toggle-status` returns the same `403` when the toggle would *activate* a job (`isActive: false → true`) for an unverified company; deactivating is always allowed.
