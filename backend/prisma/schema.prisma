@@ -47,8 +47,9 @@ enum ApplicationStatus {
 enum VerificationStatus {
   PENDING
   UNDER_REVIEW
-  APPROVED
+  VERIFIED
   REJECTED
+  DUPLICATE
 }
 
 model User {
@@ -60,12 +61,15 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  profile        JobSeekerProfile?
-  company        Company?
-  applications   Application[]
-  savedJobs      SavedJob[]
-  resume         Resume?
-  passwordResets PasswordReset[]
+  profile               JobSeekerProfile?
+  company               Company?
+  applications          Application[]
+  savedJobs             SavedJob[]
+  resume                Resume?
+  passwordResets        PasswordReset[]
+  reviewedVerifications CompanyVerification[] @relation("CompanyVerificationReviewer")
+  adminAuditLogs        AdminAuditLog[]
+  notifications         Notification[]
 
   @@map("users")
 }
@@ -106,25 +110,27 @@ model JobSeekerProfile {
 }
 
 model Company {
-  id          String        @id @default(cuid())
-  userId      String        @unique
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name        String
-  industry    String?
-  size        String?
-  website     String?
-  district    String?
-  address     String?
-  description String?
-  logoUrl     String?
-  isVerified  Boolean       @default(false)
-  status      CompanyStatus @default(ACTIVE)
-  plan        PlanTier      @default(FREE)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  userId         String        @unique
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  normalizedName String?
+  industry       String?
+  size           String?
+  website        String?
+  district       String?
+  address        String?
+  description    String?
+  logoUrl        String?
+  isVerified     Boolean       @default(false)
+  status         CompanyStatus @default(ACTIVE)
+  plan           PlanTier      @default(FREE)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  jobs         Job[]
-  verification CompanyVerification?
+  jobs               Job[]
+  verification       CompanyVerification?
+  duplicateFlaggedBy CompanyVerification[] @relation("CompanyDuplicateOf")
 
   @@map("companies")
 }
@@ -245,16 +251,50 @@ model Resume {
 }
 
 model CompanyVerification {
-  id                  String             @id @default(cuid())
-  companyId           String             @unique
-  company             Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  panNumber           String?
-  panDocumentUrl      String?
-  registrationCertUrl String?
-  status              VerificationStatus @default(PENDING)
-  reviewNotes         String?
-  reviewedAt          DateTime?
-  submittedAt         DateTime           @default(now())
+  id                   String             @id @default(cuid())
+  companyId            String             @unique
+  company              Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  panNumber            String?
+  registrationNumber   String?
+  panDocumentUrl       String?
+  registrationCertUrl  String?
+  status               VerificationStatus @default(PENDING)
+  reviewNotes          String?
+  reviewedById         String?
+  reviewedBy           User?              @relation("CompanyVerificationReviewer", fields: [reviewedById], references: [id])
+  reviewedAt           DateTime?
+  duplicateOfCompanyId String?
+  duplicateOfCompany   Company?           @relation("CompanyDuplicateOf", fields: [duplicateOfCompanyId], references: [id])
+  submittedAt          DateTime           @default(now())
 
   @@map("company_verifications")
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  admin      User     @relation(fields: [adminId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  oldValue   Json?
+  newValue   Json?
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@map("admin_audit_logs")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("notifications")
 }
