@@ -1,11 +1,10 @@
-import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   MapPin, Clock, Briefcase, Users, Building2,
   Bookmark, BookmarkCheck, Share2, ArrowLeft, CheckCircle2, ShieldCheck, ExternalLink
 } from 'lucide-react'
-import { Button, Badge, VerifiedBadge, Alert } from '@/components/ui'
+import { Button, Badge, VerifiedBadge } from '@/components/ui'
 import { cn } from '@/utils/cn'
 import { jobService } from '@/services/jobService'
 import { applicationService } from '@/services/applicationService'
@@ -67,7 +66,7 @@ export default function JobDetails() {
 
   const { data: savedData } = useQuery({
     queryKey: ['saved-jobs', 'ids'],
-    queryFn: () => applicationService.getSavedJobs().then(res => new Set((res?.savedJobs || res || []).map(s => s.jobId))),
+    queryFn: () => applicationService.getSavedJobs().then(res => new Set((res?.savedJobs || res || []).map(s => s.jobId || s.id))),
     enabled: isJobSeeker,
     staleTime: 1000 * 60 * 5,
   })

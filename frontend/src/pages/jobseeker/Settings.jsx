@@ -33,33 +33,24 @@ export default function JSSettings() {
 
   const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' })
   const [pwError, setPwError] = useState('')
-  const [notifications, setNotifications] = useState({
-    newJobMatch: true, applicationUpdates: true, companyMessages: true,
+  const DEFAULT_NOTIFICATIONS = {
+    newJobMatch: true, applicationUpdates: true,
     weeklyDigest: false, marketingEmails: false,
-  })
-  const [privacy, setPrivacy] = useState({
-    profileVisible: true, openToWork: true, resumeVisible: false,
-  })
-  const [prefsLoaded, setPrefsLoaded] = useState(false)
+  }
+  const [notifications, setNotifications] = useState(DEFAULT_NOTIFICATIONS)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  const { data: profileData } = useQuery({
-    queryKey: ['user', 'profile'],
-    queryFn: () => userService.getProfile(),
-    staleTime: 1000 * 60 * 5,
+  const { data: prefsData } = useQuery({
+    queryKey: ['user', 'notification-preferences'],
+    queryFn: () => userService.getNotificationPreferences(),
+    staleTime: 1000 * 60,
   })
 
   useEffect(() => {
-    if (!profileData || prefsLoaded) return
-    const p = profileData?.profile || profileData
-    if (p?.notificationSettings) setNotifications(n => ({ ...n, ...p.notificationSettings }))
-    setPrivacy(prev => ({
-      profileVisible: p?.profileVisible ?? prev.profileVisible,
-      openToWork: p?.openToWork ?? prev.openToWork,
-      resumeVisible: p?.resumeVisible ?? prev.resumeVisible,
-    }))
-    setPrefsLoaded(true)
-  }, [profileData, prefsLoaded])
+    if (prefsData?.settings && Object.keys(prefsData.settings).length > 0) {
+      setNotifications({ ...DEFAULT_NOTIFICATIONS, ...prefsData.settings })
+    }
+  }, [prefsData])
 
   const pwMutation = useMutation({
     mutationFn: () => userService.changePassword({ currentPassword: pwForm.current, newPassword: pwForm.newPw }),
@@ -68,8 +59,8 @@ export default function JSSettings() {
   })
 
   const notifMutation = useMutation({
-    mutationFn: () => userService.updateNotifications({ ...notifications, ...privacy }),
-    onSuccess: () => queryClient.invalidateQueries(['user', 'profile']),
+    mutationFn: () => userService.updateNotifications(notifications),
+    onSuccess: () => queryClient.invalidateQueries(['user', 'notification-preferences']),
   })
 
   const deleteMutation = useMutation({
@@ -117,7 +108,6 @@ export default function JSSettings() {
           {[
             { key: 'newJobMatch', label: 'New Job Matches', desc: 'When jobs matching your profile are posted' },
             { key: 'applicationUpdates', label: 'Application Updates', desc: 'When your application status changes' },
-            { key: 'companyMessages', label: 'Company Messages', desc: 'When a company sends you a message' },
             { key: 'weeklyDigest', label: 'Weekly Job Digest', desc: 'A weekly summary of top jobs for you' },
             { key: 'marketingEmails', label: 'Marketing Emails', desc: 'Tips, news, and product updates' },
           ].map(({ key, label, desc }) => (
@@ -127,24 +117,6 @@ export default function JSSettings() {
                 <p className="text-xs text-slate-500">{desc}</p>
               </div>
               <Toggle checked={notifications[key]} onChange={v => setNotifications(n => ({ ...n, [key]: v }))} />
-            </div>
-          ))}
-        </div>
-      </CardSection>
-
-      <CardSection title="Privacy & Visibility" description="Control who can see your profile">
-        <div className="space-y-4">
-          {[
-            { key: 'profileVisible', label: 'Public Profile', desc: 'Allow companies to discover your profile' },
-            { key: 'openToWork', label: 'Open to Work', desc: 'Show "Open to Work" badge on your profile' },
-            { key: 'resumeVisible', label: 'Resume Visible', desc: 'Allow companies to view your resume without applying' },
-          ].map(({ key, label, desc }) => (
-            <div key={key} className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-slate-900">{label}</p>
-                <p className="text-xs text-slate-500">{desc}</p>
-              </div>
-              <Toggle checked={privacy[key]} onChange={v => setPrivacy(p => ({ ...p, [key]: v }))} />
             </div>
           ))}
         </div>

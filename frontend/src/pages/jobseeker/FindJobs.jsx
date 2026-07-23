@@ -80,7 +80,7 @@ export default function FindJobs() {
       applicationService
         .getSavedJobs()
         .then(
-          (res) => new Set((res?.savedJobs || res || []).map((s) => s.jobId)),
+          (res) => new Set((res?.savedJobs || res || []).map((s) => s.jobId || s.id)),
         ),
     enabled: isJobSeeker,
     staleTime: 1000 * 60 * 5,

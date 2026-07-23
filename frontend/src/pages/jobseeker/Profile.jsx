@@ -16,7 +16,7 @@ import {
   Save,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Badge, Avatar, Alert } from "@/components/ui";
+import { Button, Avatar, Alert } from "@/components/ui";
 import { Input, Textarea } from "@/components/ui/Input";
 import useAuthStore from "@/store/authStore";
 import { userService } from "@/services/userService";
@@ -391,13 +391,6 @@ export default function Profile() {
                 <p className="text-sm text-slate-600 mt-4 leading-relaxed max-w-xl">
                   {profile.bio}
                 </p>
-              )}
-              {profile?.openToWork && (
-                <div className="mt-4">
-                  <Badge variant="success" size="md" dot>
-                    Open to Work
-                  </Badge>
-                </div>
               )}
             </div>
           </div>
