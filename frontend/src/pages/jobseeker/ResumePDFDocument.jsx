@@ -1,4 +1,5 @@
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, Text, View, Link, StyleSheet } from '@react-pdf/renderer'
+import { formatDateRange, normalizeUrl } from '@/utils/formatters'
 
 const styles = StyleSheet.create({
   page: { padding: 40, fontFamily: 'Helvetica', color: '#0f172a', fontSize: 10, lineHeight: 1.35, backgroundColor: '#ffffff' },
@@ -6,6 +7,7 @@ const styles = StyleSheet.create({
   name: { fontSize: 24, fontWeight: 700, color: '#0f172a' },
   title: { fontSize: 11, color: '#475569', marginTop: 3 },
   contact: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, color: '#475569', fontSize: 9 },
+  link: { color: '#1d4ed8', fontSize: 9, textDecoration: 'none' },
   section: { marginBottom: 12 },
   heading: { fontSize: 10, color: '#1d4ed8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 5 },
   paragraph: { color: '#334155' },
@@ -28,21 +30,15 @@ function hasAny(obj, keys) {
   return keys.some((key) => String(obj?.[key] || '').trim())
 }
 
-function formatDuration(start, end, isCurrent) {
-  const parts = []
-  if (start) parts.push(start)
-  if (end || isCurrent) parts.push(isCurrent ? 'Present' : end)
-  return parts.join(' - ')
-}
-
 export default function ResumePDFDocument({ data }) {
   const experience = list(data.experience).filter((exp) => hasAny(exp, ['role', 'company', 'startDate', 'endDate', 'description']))
   const education = list(data.education).filter((edu) => hasAny(edu, ['degree', 'institution', 'startYear', 'endYear']))
   const skills = list(data.skills)
-  const projects = list(data.projects).filter((project) => hasAny(project, ['name', 'description']))
-  const certifications = list(data.certifications).filter((cert) => hasAny(cert, ['name', 'issuer']))
+  const projects = list(data.projects).filter((project) => hasAny(project, ['name', 'description', 'technologies', 'link']))
+  const certifications = list(data.certifications).filter((cert) => hasAny(cert, ['name', 'issuer', 'issueDate', 'credentialUrl']))
 
-  const contacts = [data.email, data.phone, data.location, data.portfolio].filter(Boolean)
+  const portfolioUrl = normalizeUrl(data.portfolio)
+  const textContacts = [data.email, data.phone, data.location].filter(Boolean)
 
   return (
     <Document title={`LocalSkill Resume - ${data.name || 'User'}`} author="LocalSkill">
@@ -50,8 +46,13 @@ export default function ResumePDFDocument({ data }) {
         <View style={styles.header}>
           <Text style={styles.name}>{data.name || 'Your Name'}</Text>
           {data.title ? <Text style={styles.title}>{data.title}</Text> : null}
-          {contacts.length > 0 ? (
-            <View style={styles.contact}>{contacts.map((contact) => <Text key={contact}>{contact}</Text>)}</View>
+          {(textContacts.length > 0 || portfolioUrl) ? (
+            <View style={styles.contact}>
+              {textContacts.map((contact) => <Text key={contact}>{contact}</Text>)}
+              {portfolioUrl ? (
+                <Link src={portfolioUrl} style={styles.link}>{data.portfolio}</Link>
+              ) : null}
+            </View>
           ) : null}
         </View>
 
@@ -69,7 +70,7 @@ export default function ResumePDFDocument({ data }) {
               <View key={`${exp.role}-${index}`} style={styles.item}>
                 <View style={styles.itemTop}>
                   <Text style={styles.itemTitle}>{exp.role || 'Role'}</Text>
-                  <Text style={styles.muted}>{formatDuration(exp.startDate, exp.endDate, exp.isCurrent)}</Text>
+                  <Text style={styles.muted}>{formatDateRange(exp.startDate, exp.endDate, exp.isCurrent)}</Text>
                 </View>
                 {exp.company ? <Text style={styles.muted}>{exp.company}</Text> : null}
                 {exp.description ? <Text style={styles.description}>{exp.description}</Text> : null}
@@ -85,7 +86,7 @@ export default function ResumePDFDocument({ data }) {
               <View key={`${edu.degree}-${index}`} style={styles.item}>
                 <View style={styles.itemTop}>
                   <Text style={styles.itemTitle}>{edu.degree || 'Degree'}</Text>
-                  <Text style={styles.muted}>{formatDuration(edu.startYear, edu.endYear, false)}</Text>
+                  <Text style={styles.muted}>{formatDateRange(edu.startYear, edu.endYear, false)}</Text>
                 </View>
                 {edu.institution ? <Text style={styles.muted}>{edu.institution}</Text> : null}
               </View>
@@ -103,24 +104,38 @@ export default function ResumePDFDocument({ data }) {
         {projects.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.heading}>Projects</Text>
-            {projects.map((project, index) => (
-              <View key={`${project.name}-${index}`} style={styles.item}>
-                {project.name ? <Text style={styles.itemTitle}>{project.name}</Text> : null}
-                {project.description ? <Text style={styles.description}>{project.description}</Text> : null}
-              </View>
-            ))}
+            {projects.map((project, index) => {
+              const projectLink = normalizeUrl(project.link)
+              return (
+                <View key={`${project.name}-${index}`} style={styles.item}>
+                  <View style={styles.itemTop}>
+                    {project.name ? <Text style={styles.itemTitle}>{project.name}</Text> : null}
+                    {projectLink ? <Link src={projectLink} style={styles.link}>{project.link}</Link> : null}
+                  </View>
+                  {project.technologies ? <Text style={styles.muted}>{project.technologies}</Text> : null}
+                  {project.description ? <Text style={styles.description}>{project.description}</Text> : null}
+                </View>
+              )
+            })}
           </View>
         ) : null}
 
         {certifications.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.heading}>Certifications</Text>
-            {certifications.map((cert, index) => (
-              <View key={`${cert.name}-${index}`} style={styles.item}>
-                <Text style={styles.itemTitle}>{cert.name || 'Certification'}</Text>
-                {cert.issuer ? <Text style={styles.muted}>{cert.issuer}</Text> : null}
-              </View>
-            ))}
+            {certifications.map((cert, index) => {
+              const credentialUrl = normalizeUrl(cert.credentialUrl)
+              return (
+                <View key={`${cert.name}-${index}`} style={styles.item}>
+                  <View style={styles.itemTop}>
+                    <Text style={styles.itemTitle}>{cert.name || 'Certification'}</Text>
+                    {cert.issueDate ? <Text style={styles.muted}>{cert.issueDate}</Text> : null}
+                  </View>
+                  {cert.issuer ? <Text style={styles.muted}>{cert.issuer}</Text> : null}
+                  {credentialUrl ? <Link src={credentialUrl} style={styles.link}>{cert.credentialUrl}</Link> : null}
+                </View>
+              )
+            })}
           </View>
         ) : null}
       </Page>
