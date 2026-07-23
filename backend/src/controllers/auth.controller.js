@@ -9,7 +9,10 @@ const { normalizeCompanyName } = require("../services/companyDuplicateService");
 const PROFILE_SELECT = {
   profile: { select: { firstName: true, lastName: true, avatarUrl: true } },
   company: {
-    select: { id: true, name: true, logoUrl: true, isVerified: true, status: true, plan: true },
+    select: {
+      id: true, name: true, logoUrl: true, isVerified: true, status: true, plan: true,
+      verification: { select: { status: true } },
+    },
   },
 };
 

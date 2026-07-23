@@ -11,6 +11,7 @@ const applicationRoutes = require("./src/routes/application.routes");
 const resumeRoutes = require("./src/routes/resume.routes");
 const billingRoutes = require("./src/routes/billing.routes");
 const adminRoutes = require("./src/routes/admin.routes");
+const notificationRoutes = require("./src/routes/notification.routes");
 const { standardizeResponses, sendError } = require("./src/utils/response");
 
 const app = express();
@@ -38,6 +39,7 @@ app.use("/api/saved-jobs", require("./src/routes/savedJobs.routes"));
 app.use("/api/resumes", resumeRoutes);
 app.use("/api/billing", billingRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({

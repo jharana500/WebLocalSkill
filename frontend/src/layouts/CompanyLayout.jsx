@@ -2,13 +2,21 @@ import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import {
   LayoutDashboard, ShieldCheck, Plus, Briefcase, Users,
-  Building2, BarChart2, CreditCard, Settings, Bell, Menu, X,
+  Building2, BarChart2, CreditCard, Settings, Menu, X,
   ChevronLeft, ChevronRight, LogOut
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Avatar, Badge, Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui'
+import { NotificationBell } from '@/components/layout/NotificationBell'
 import useAuthStore from '@/store/authStore'
 import { useLogout } from '@/hooks/useAuth'
+
+const VERIFICATION_BADGE = {
+  PENDING: { variant: 'warning', label: 'Pending' },
+  UNDER_REVIEW: { variant: 'primary', label: 'Under Review' },
+  REJECTED: { variant: 'danger', label: 'Rejected' },
+  DUPLICATE: { variant: 'danger', label: 'Duplicate' },
+}
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/company/dashboard' },
@@ -25,6 +33,10 @@ const navItems = [
 function Sidebar({ collapsed, onToggle }) {
   const { user } = useAuthStore()
   const logout = useLogout()
+  const verificationStatus = user?.company?.verification?.status || 'PENDING'
+  const verificationBadge = user?.company?.isVerified
+    ? { variant: 'success', label: 'Verified' }
+    : VERIFICATION_BADGE[verificationStatus] || VERIFICATION_BADGE.PENDING
 
   return (
     <aside
@@ -53,8 +65,8 @@ function Sidebar({ collapsed, onToggle }) {
             <Avatar src={user?.company?.logoUrl} name={user?.company?.name || user?.fullName} size="sm" />
             <div className="min-w-0">
               <p className="text-xs font-semibold text-slate-900 truncate">{user?.company?.name || 'Your Company'}</p>
-              <Badge variant={user?.company?.isVerified ? 'success' : 'warning'} size="xs">
-                {user?.company?.isVerified ? 'Verified' : 'Unverified'}
+              <Badge variant={verificationBadge.variant} size="xs">
+                {verificationBadge.label}
               </Badge>
             </div>
           </div>
@@ -110,10 +122,7 @@ function TopBar({ onMobileMenuOpen }) {
       <div className="flex-1 hidden md:block" />
 
       <div className="flex items-center gap-2">
-        <button className="relative p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors">
-          <Bell size={18} />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-blue-600 rounded-full" />
-        </button>
+        <NotificationBell />
 
         <Dropdown
           align="right"
