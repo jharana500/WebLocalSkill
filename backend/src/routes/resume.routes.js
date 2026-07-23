@@ -7,5 +7,6 @@ router.use(authenticate)
 router.get('/me', ctrl.getMyResume)
 router.post('/me', ctrl.saveMyResume)
 router.patch('/me', ctrl.updateMyResume)
+router.delete('/me', ctrl.deleteMyResume)
 
 module.exports = router
