@@ -169,11 +169,115 @@ Errors: `404` company not found, `400` invalid/no-op transition or validation fa
 
 ---
 
-## Jobs — verification restrictions (Phase 4)
+## Jobs (Phase 4 restrictions superseded by Phase 5's `status` field — see below)
 
-`POST /api/jobs` now accepts an optional `isActive` in the body (previously ignored — new jobs always published immediately). An unverified company (any `verificationStatus` other than `VERIFIED`) may still create a job, but:
+### `POST /api/jobs` / `PUT /api/jobs/:id`
 
-- `isActive: false` or omitted → created as a draft, `201`.
-- `isActive: true` while unverified → `403` `"Your company must be verified before publishing jobs."`, nothing is created.
+Company role + ownership required (`PUT` only on jobs the caller's company owns — `404` otherwise, never `403`, to avoid confirming another company's job exists). Accepted fields: `title`, `description`, `requirements`, `benefits`, `jobType`, `experience`, `category`, `salary`, `salaryMin`, `salaryMax`, `openings`, `district`, `address`, `deadline`, and (create only) `status`.
 
-`PATCH /api/jobs/:id/toggle-status` returns the same `403` when the toggle would *activate* a job (`isActive: false → true`) for an unverified company; deactivating is always allowed.
+- `status: 'DRAFT'` → always allowed, regardless of verification.
+- `status: 'ACTIVE'` or omitted → defaults to publishing. If the company isn't `VERIFIED`, this is rejected with `403` `"Your company must be verified before publishing jobs."` and nothing is created — the caller must explicitly pass `status: 'DRAFT'` to save one while unverified.
+- `salaryMin > salaryMax` → `400`.
+- `PUT` never touches `status` — use the dedicated endpoints below. Omitted fields are left unchanged (no accidental overwrite with `undefined`).
+
+### `PATCH /api/jobs/:id/publish`
+
+Verified company only. `409` if already `ACTIVE`. `400` if the deadline has already passed, or if title/description/jobType/category are incomplete.
+
+### `PATCH /api/jobs/:id/close`
+
+Owning company only, any verification status. `409` if already `CLOSED`. Applications remain accessible after closing.
+
+### `PATCH /api/jobs/:id/reopen`
+
+Verified company only, job must currently be `CLOSED` (`409` otherwise). `400` if the deadline has already passed.
+
+### `PATCH /api/jobs/:id/toggle-status`
+
+Kept for the existing frontend action — delegates to publish/close/reopen based on the job's current status rather than duplicating the rules.
+
+### `DELETE /api/jobs/:id`
+
+Hard-deletes only if the job has zero applications. If it has any, returns `409` `"This job has applications and cannot be deleted. Close it instead to preserve applicant history."` — applicant history is never silently cascade-deleted.
+
+### `GET /api/jobs/my`
+
+Company's own jobs. Query: `status` (`DRAFT`|`ACTIVE`|`CLOSED`|`all`), `q` (title search), `page`, `limit` (max 100). Each job includes `applicationCount`, `pendingCount`, `shortlistedCount`, `acceptedCount`.
+
+### Applying to a job (`POST /api/applications`)
+
+Now also rejects with `400` `"The application deadline for this job has passed"` if the job's `deadline` is in the past — this is the "EXPIRED" behavior from Phase 5.7's status model; there's no separate stored `EXPIRED` enum value (no scheduler in this project to flip one), it's enforced at apply-time from `deadline < now()`.
+
+---
+
+## Application status (Phase 5)
+
+`PATCH /api/applications/:id/status` now validates the transition against the existing `ApplicationStatus` enum (no new statuses added — no `INTERVIEW` status exists in this schema, see "Interview scheduling" below):
+
+```
+PENDING    -> REVIEWING, SHORTLISTED, REJECTED
+REVIEWING  -> SHORTLISTED, REJECTED
+SHORTLISTED -> HIRED, REJECTED
+HIRED, REJECTED, WITHDRAWN -> (terminal)
+```
+
+An invalid transition (e.g. `SHORTLISTED` → `REVIEWING`) returns `409` with a readable message instead of silently applying it. Every successful transition creates a `Notification` for the applicant (type `APPLICATION_STATUS`) inside the same `$transaction` as the status update.
+
+---
+
+## Company dashboard (Phase 5)
+
+### `GET /api/company/dashboard`
+
+```json
+{ "success": true, "message": "Company dashboard fetched successfully",
+  "data": {
+    "metrics": {
+      "totalJobs": 0, "activeJobs": 0, "draftJobs": 0, "closedJobs": 0,
+      "totalApplications": 0, "pendingApplications": 0, "shortlistedApplications": 0,
+      "rejectedApplications": 0, "acceptedApplications": 0,
+      "interviewsScheduled": 0,
+      "unreadNotifications": 0, "profileCompletion": 0, "verificationStatus": "PENDING"
+    },
+    "recentApplications": [], "recentJobs": [],
+    "applicationStatusDistribution": [], "applicationsOverTime": [],
+    "topPerformingJobs": [], "recentActivity": []
+  } }
+```
+
+`interviewsScheduled` is always `0` — there is no interview-scheduling feature in this project (see below), this is an honest constant, not a placeholder pretending data exists. `profileCompletion` is computed from 8 company-editable fields (`name`, `description`, `industry`, `email`, `phone`, `website`, `district`, `logoUrl`) — registration/PAN documents are tracked separately on the Verification page, not folded into this percentage. `recentActivity` is derived from real `Application`/`Job` rows (most recent 10, sorted by timestamp) — never fabricated.
+
+### `GET /api/company/analytics?range=`
+
+Existing `appTrend`/`jobPerformance`/`funnel`/`summary` unchanged, plus new `jobsByStatus` (array of `{status, count}`) and `averageApplicationsPerJob` (number, `0` when there are no jobs — never a division by zero).
+
+---
+
+## Company profile (Phase 5)
+
+`PUT /api/company/profile` now also accepts `tagline`, `foundedYear`, `email` (previously collected by the frontend form and silently discarded). Validation: `email` must look like an email, `website` must look like a URL, `foundedYear` must be `1800`–current year, `description` ≤3000 chars, `tagline` ≤150 chars — all `400` with a readable message on failure. `isVerified`, `status` (`CompanyStatus`), `plan`, and every `CompanyVerification` field remain impossible to set through this endpoint — it only ever writes the fields explicitly listed here.
+
+---
+
+## Notifications (Phase 5 — endpoints new; the underlying model is from Phase 4)
+
+```
+GET    /api/notifications                  ?page=&limit=&unreadOnly=true
+PATCH  /api/notifications/:id/read
+PATCH  /api/notifications/read-all
+DELETE /api/notifications/:id
+```
+
+All scoped to `req.user.id` — there is no way to read or modify another user's notifications. `GET` also returns `unreadCount` regardless of pagination, for a notification-bell badge.
+
+---
+
+## Account settings (Phase 5)
+
+`POST /api/user/change-password`, `GET`/`PUT /api/user/notifications`, `DELETE /api/user/account` were previously gated behind `requireRole('job_seeker')` even though their controllers only ever touch `req.user.id` — a company user got `403` from all three. Moved out of that role gate; usable by any authenticated role. `PUT /api/user/notifications` now persists to `User.notificationPreferences` (a `Json?` column) instead of echoing the request body back without saving it.
+
+---
+
+## Interview scheduling — not applicable
+
+No `Interview` model, fields, routes, or frontend UI exist anywhere in this codebase. Per the Phase 5 brief's own instruction not to invent functionality that isn't there, this was not added. `metrics.interviewsScheduled` above is hardcoded to `0` for this reason.

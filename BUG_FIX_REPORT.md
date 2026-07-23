@@ -1,5 +1,15 @@
 # LocalSkill Bug Fix Report
 
+## Company Dashboard & Job Data Loss — Real Bugs Found (Phase 5)
+
+The most significant finding of this project so far: **job creation had been silently discarding most of its data since it was built.** `PostJob.jsx`/`EditJob.jsx` collect `experience`, `salaryMin`, `salaryMax`, `benefits`, `deadline`, `openings` — `job.controller.js`'s `createJob`/`updateJob` only ever read `{title, description, requirements, jobType, category, salary, district, address, expiresAt}`. Every job ever created lost six fields, silently. The `deadline` field name didn't even match the backend's `expiresAt`, so it was doubly broken. Nine other frontend files (`JobDetails.jsx`, `ApplyJob.jsx`, `ApplicationDetail.jsx`, `SavedJobs.jsx`, `FindJobs.jsx`, `JobDirectory.jsx`, `Landing.jsx`, `ManageJobs.jsx`) already read `salaryMin`/`salaryMax`/`deadline` as if they existed — they'd been silently falling back to "Salary negotiable" / `—` on every job, everywhere, the whole time.
+
+Also found: `ManageJobs.jsx` couldn't distinguish a draft from a closed job (both were just `isActive: false`); `CompanyProfile.jsx` collected `tagline`/`founded`/`email` with no backend columns to save them into; the company Settings page's password-change fields had no `value`/`onChange` at all and "Save Settings" called no API — pure UI mockup; `/api/user/change-password`, `/api/user/notifications`, `/api/user/account` were gated behind `requireRole('job_seeker')` even though every company user needs them too; `updateNotifications` was a no-op that echoed the request body back without persisting it; no notification-management endpoints existed (only write-only creation from Phase 4); application status changes never notified the applicant; `deleteJob` had no protection against destroying applicant history via cascade delete.
+
+Full detail, root causes, and live-verified fixes in `COMPANY_DASHBOARD_FLOW.md` and `PHASE_5_COMPLETION_REPORT.md`.
+
+---
+
 ## Admin Company Verification — Real Bugs Found (Phase 4)
 
 Unlike Phase 1, this audit found genuine, previously-shipped bugs in the admin company verification area:

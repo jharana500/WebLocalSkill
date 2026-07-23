@@ -80,3 +80,13 @@ DELETE /api/notifications/:id            (new)
 ## Company role permissions (unchanged, re-verified)
 
 Every company-scoped query resolves the company via `prisma.company.findUnique({ where: { userId: req.user.id } })` — never from a client-supplied `companyId`. Cross-company access was already impossible before this phase (verified by reading every handler, not assumed) and remains so.
+
+---
+
+## Resolution (post-implementation)
+
+Every gap listed above was fixed and live-verified against a running server before being called done — including one bug this process itself caught: the dashboard's post-transition company refetch and the job-creation default-status logic both needed a second pass after the first live test run exposed real discrepancies (see `PHASE_5_COMPLETION_REPORT.md` for specifics).
+
+One deliberate API contract change worth calling out: `POST /api/jobs` used to take a boolean `isActive` (silently ignored in practice, since nothing ever sent it correctly). It now takes an explicit `status: 'DRAFT' | 'ACTIVE'`, defaulting to `'ACTIVE'` when omitted (matching how job boards normally behave — a job is live unless you explicitly ask to save it as a draft), with the existing verified-company gate blocking the request server-side if that would result in `ACTIVE` for an unverified company. This surfaced as a real regression against Phase 4's own test suite during this phase's work — caught, root-caused, and fixed rather than silently changing the test to match broken behavior.
+
+See `PHASE_5_COMPLETION_REPORT.md` for the full file-by-file accounting, live verification transcript, and commit-plan outcome.
