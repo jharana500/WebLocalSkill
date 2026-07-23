@@ -1,6 +1,6 @@
-# API Contract — Authentication
+# API Contract
 
-Scope: `/api/auth/*` only, documented as part of Phase 2 (authentication/session/role work). Other endpoint groups (`/api/company`, `/api/applications`, `/api/billing`, etc.) are not yet documented here — this file is a starting point, not a full contract, and should be extended as later phases touch other routes.
+Scope: `/api/auth/*` (Phase 2) and `/api/resumes/*` (Phase 3). Other endpoint groups (`/api/company`, `/api/applications`, `/api/billing`, etc.) are not yet documented here — this file is a starting point, not a full contract, and should be extended as later phases touch other routes.
 
 All responses share the same envelope:
 
@@ -82,3 +82,27 @@ Not implemented — returns `501`. Out of scope for this phase; sessions rely on
 ```
 
 `role` is always lowercase (`job_seeker` | `company` | `admin`), regardless of the uppercase Prisma enum stored in Postgres. `company` is present (with `id`, `name`, `logoUrl`, `isVerified`, `status`, `plan`) only for `role: "company"` users; otherwise the key is omitted. The password hash is never included.
+
+---
+
+## Resume
+
+All `/api/resumes/*` endpoints require auth. Ownership is always derived from `req.user.id` — no endpoint accepts a client-supplied user/owner ID, and there is no way to read or write another user's resume. One resume per user (`Resume.userId` is `@unique` in the schema).
+
+### `GET /api/resumes/me`
+
+- No resume saved yet → `200` `{ "data": { "resume": null } }`.
+- Resume exists → `200` `{ "data": { "resume": { "id", "title", "summary", "personalData", "experience", "education", "skills", "projects", "certifications", "createdAt", "updatedAt" } } }`.
+
+### `POST /api/resumes/me` / `PATCH /api/resumes/me`
+
+Both create-or-update (upsert) the caller's single resume — `PATCH` is an alias of the same handler as `POST`, matching how the frontend already calls it. Body is a flat or `personalData`-nested resume payload (either shape accepted; see `resume.controller.js`'s `normalizeResumePayload`).
+
+- Non-array `experience`/`education`/`skills`/`projects`/`certifications` are silently normalized to `[]` rather than rejected.
+- String fields are trimmed and capped at 5,000 characters; each array is capped at 50 items.
+- `personalData.email`, if provided, must match a basic email pattern → `400` `"Enter a valid email address"` otherwise.
+- Success → `200` `"Resume draft saved successfully"` with the saved `resume`.
+
+### `DELETE /api/resumes/me`
+
+Deletes the caller's resume if one exists; a safe no-op (still `200`) if not. No frontend UI calls this yet — added for API completeness per the Phase 3 brief's preferred endpoint list.

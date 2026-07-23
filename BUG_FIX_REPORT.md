@@ -1,5 +1,15 @@
 # LocalSkill Bug Fix Report
 
+## Resume PDF Export — Root Cause Investigation (Phase 3)
+
+Phase 3's brief described a specific set of PDF-export symptoms: sidebar/navbar/dashboard chrome appearing in the exported PDF, the browser URL/date footer/page title leaking in, and broken date-range characters (`2022 � Present`). The described likely causes were `window.print()` on the whole page, `html2canvas` capturing `document.body`, a ref attached to the dashboard container, or an unsupported dash character.
+
+**None of these reproduce in this codebase.** The full search the brief specifies (`window.print()`, `html2canvas`, `jsPDF`, `document.body` capture, `querySelector`, `resumeRef`/`componentRef`, resume data in `localStorage`) turned up nothing across the frontend except one unrelated, correct use of `document.body.appendChild()` — the standard temporary-`<a>`-tag trick used to trigger a blob download, not a page capture. `frontend/src/pages/jobseeker/ResumeBuilder.jsx`'s "Download PDF" button already calls `@react-pdf/renderer`'s `pdf(<ResumePDFDocument data={...} />).toBlob()` — `ResumePDFDocument.jsx` is a fully isolated `Document`/`Page`/`View`/`Text` tree with zero references to the DOM, dashboard layout, sidebar, or route state. A live-generated test PDF (see `RESUME_BUILDER_FLOW.md`) confirmed clean multi-page output with no app-shell content and a byte-verified plain-ASCII date separator.
+
+**Conclusion:** this specific bug does not exist in the current code. Phase 3's real work went into closing gaps found during a fresh audit of the same area (missing Projects/Certifications editor UI, unhandled resume-load failure, non-clickable links, array-index React keys) — documented in full in `RESUME_BUILDER_FLOW.md` and `PHASE_3_COMPLETION_REPORT.md`.
+
+---
+
 ## Verification Round — Runtime Stabilization Re-Audit
 
 This round re-audited every bug listed in the Phase 1 runtime-stabilization brief against the actual code and a live backend/database, rather than assuming the previous round's fixes still held.

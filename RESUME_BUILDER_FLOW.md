@@ -77,3 +77,27 @@ PATCH /api/resumes/me   — auth required, currently aliased to the same upsert 
 ## PDF strategy selected
 
 **`@react-pdf/renderer`, unchanged** — already the right choice per Phase 3.11 and already correctly implemented as an isolated document tree. Effort this phase goes into closing gaps #2–#4 above (projects/certifications sections actually reachable, stable keys, clickable links) rather than switching libraries.
+
+---
+
+## Resolution (post-implementation)
+
+| # | Gap | Fix applied |
+|---|---|---|
+| 1 | Silent load failure | `ResumeBuilder.jsx` now reads `isError`/`refetch` from the query and renders an `Alert` + Retry button instead of falling through to an empty form with no explanation |
+| 2 | No Projects/Certifications UI | Added two new tabs (`Projects`, `Certifications`) following the exact same card/add/remove pattern already used by Experience/Education — same components, same layout language |
+| 3 | Index-based React keys | Every dynamic entry (experience/education/projects/certifications) now carries a stable `id` (`crypto.randomUUID()`, assigned on creation and backfilled via `withIds()` when older saved data without an `id` is loaded); `.map()` calls key off `item.id` |
+| 4 | Portfolio link inert/unnormalized | New `normalizeUrl()` helper (`frontend/src/utils/formatters.js`) prepends `https://` when missing; the PDF now renders it as an actual `<Link>`, and the live preview renders it as a clickable anchor. Project links and certification credential URLs get the same treatment |
+| 5 | No trimming / object-shape validation on the backend | `resume.controller.js` now trims every string field (capped at 5,000 chars) and only accepts `personalData` if it's actually a plain object, falling back to the flat-field default otherwise |
+| 6 | Response message text | Aligned to the brief's exact copy: `"Resume fetched successfully"`, `"Resume draft saved successfully"` |
+| 7 | No DELETE endpoint | Added `DELETE /api/resumes/me` (`deleteMany` scoped to `req.user.id`, so it's a safe no-op if nothing exists) and `resumeService.deleteResume()` on the frontend for API completeness — no UI button calls it yet, since no delete-resume UX exists in the current design |
+| 8 | No tests | `backend/test/resume.test.js` — 9 tests covering auth-required, empty-state, create, update-not-duplicate, cross-user isolation, malformed-array normalization, invalid-email rejection, and delete |
+
+A shared `formatDateRange(start, end, isCurrent)` helper replaced the two near-duplicate implementations that previously lived separately in the live preview and the PDF document, so both always render date ranges identically (plain ASCII `" - "`, `"Present"` for current roles).
+
+### PDF verified live, not just read
+
+Rendered an actual PDF via `@react-pdf/renderer`'s Node-compatible `pdf().toBuffer()` API (using Vite's `ssrLoadModule` to load the real `.jsx` component, not a reimplementation) with a deliberately long 6-role, long-description resume:
+
+- Output was a valid multi-page PDF (2 pages) — confirms automatic pagination works with no extra configuration needed.
+- Confirmed at the byte level that `formatDateRange`'s output (`"2022-01 - Present"`) is pure ASCII (`0x2d` for the hyphen) — the `2022 � Present` symptom described in the brief does not and cannot occur here.
