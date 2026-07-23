@@ -2,6 +2,11 @@ const prisma = require("../lib/prisma");
 const { getFileUrl } = require("../middleware/upload");
 const { normalizeCompanyName } = require("../services/companyDuplicateService");
 
+const EMAIL_PATTERN = /^\S+@\S+\.\S+$/;
+const CURRENT_YEAR = new Date().getFullYear();
+const MAX_DESCRIPTION_LENGTH = 3000;
+const MAX_TAGLINE_LENGTH = 150;
+
 async function getProfile(req, res) {
   const company = await prisma.company.findUnique({
     where: { userId: req.user.id },
@@ -12,18 +17,61 @@ async function getProfile(req, res) {
   res.json({ company });
 }
 
+function validateProfilePayload(body) {
+  if (body.email && !EMAIL_PATTERN.test(body.email)) {
+    return "Enter a valid careers email address";
+  }
+  if (body.website) {
+    const value = String(body.website).trim();
+    if (value && !/^https?:\/\/.+\..+/i.test(value) && !/^[\w-]+\.[a-z]{2,}/i.test(value)) {
+      return "Enter a valid website URL";
+    }
+  }
+  if (body.foundedYear !== undefined && body.foundedYear !== "" && body.foundedYear !== null) {
+    const year = Number.parseInt(body.foundedYear, 10);
+    if (!Number.isFinite(year) || year < 1800 || year > CURRENT_YEAR) {
+      return `Founded year must be between 1800 and ${CURRENT_YEAR}`;
+    }
+  }
+  if (body.description && String(body.description).length > MAX_DESCRIPTION_LENGTH) {
+    return `Description must be under ${MAX_DESCRIPTION_LENGTH} characters`;
+  }
+  if (body.tagline && String(body.tagline).length > MAX_TAGLINE_LENGTH) {
+    return `Tagline must be under ${MAX_TAGLINE_LENGTH} characters`;
+  }
+  return null;
+}
+
 async function updateProfile(req, res) {
-  const { name, industry, size, phone, website, district, address, description } =
-    req.body;
+  const {
+    name, tagline, industry, size, foundedYear, email, phone, website,
+    district, address, description,
+  } = req.body;
+
+  const validationError = validateProfilePayload(req.body);
+  if (validationError) {
+    return res.status(400).json({ success: false, message: validationError, errors: [] });
+  }
+
   const normalizedName = name !== undefined ? normalizeCompanyName(name) : undefined;
+  const parsedFoundedYear =
+    foundedYear === undefined
+      ? undefined
+      : foundedYear === "" || foundedYear === null
+        ? null
+        : Number.parseInt(foundedYear, 10);
+
   const company = await prisma.company.upsert({
     where: { userId: req.user.id },
-    update: { name, normalizedName, industry, size, phone, website, district, address, description },
+    update: {
+      name, normalizedName, tagline, industry, size,
+      foundedYear: parsedFoundedYear, email, phone, website, district, address, description,
+    },
     create: {
       userId: req.user.id,
       name: name || "",
       normalizedName: normalizeCompanyName(name || ""),
-      phone,
+      tagline, industry, size, foundedYear: parsedFoundedYear, email, phone, website, district, address, description,
     },
   });
   res.json({ company });
@@ -90,72 +138,150 @@ async function getVerificationStatus(req, res) {
   });
 }
 
-async function getDashboardStats(req, res) {
-  const company = await prisma.company.findUnique({
-    where: { userId: req.user.id },
-  });
-  if (!company) return res.status(404).json({ message: "Company not found" });
+function calculateProfileCompletion(company) {
+  const checks = [
+    company.name,
+    company.description,
+    company.industry,
+    company.email,
+    company.phone,
+    company.website,
+    company.district,
+    company.logoUrl,
+  ];
+  const filled = checks.filter(Boolean).length;
+  return Math.round((filled / checks.length) * 100);
+}
 
-  const [activeJobs, totalApplications, shortlisted, hired] = await Promise.all(
-    [
-      prisma.job.count({ where: { companyId: company.id, isActive: true } }),
+function buildRecentActivity(recentApplications, recentJobs) {
+  const events = [
+    ...recentApplications.map((a) => ({
+      type: "application_received",
+      message: `New application for "${a.job?.title || "a job"}"`,
+      time: a.createdAt,
+    })),
+    ...recentJobs.map((j) => ({
+      type: j.status === "ACTIVE" ? "job_published" : "job_created",
+      message: j.status === "ACTIVE" ? `Published "${j.title}"` : `Saved draft "${j.title}"`,
+      time: j.createdAt,
+    })),
+  ];
+  return events.sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 10);
+}
+
+async function getDashboardStats(req, res, next) {
+  try {
+    const company = await prisma.company.findUnique({
+      where: { userId: req.user.id },
+      include: { verification: { select: { status: true } } },
+    });
+    if (!company) {
+      return res.status(404).json({ success: false, message: "Company not found" });
+    }
+
+    const [
+      totalJobs, activeJobs, draftJobs, closedJobs,
+      totalApplications, pendingApplications, shortlistedApplications,
+      rejectedApplications, acceptedApplications, unreadNotifications,
+    ] = await Promise.all([
+      prisma.job.count({ where: { companyId: company.id } }),
+      prisma.job.count({ where: { companyId: company.id, status: "ACTIVE" } }),
+      prisma.job.count({ where: { companyId: company.id, status: "DRAFT" } }),
+      prisma.job.count({ where: { companyId: company.id, status: "CLOSED" } }),
       prisma.application.count({ where: { job: { companyId: company.id } } }),
-      prisma.application.count({
-        where: { job: { companyId: company.id }, status: "SHORTLISTED" },
-      }),
-      prisma.application.count({
-        where: { job: { companyId: company.id }, status: "HIRED" },
-      }),
-    ],
-  );
+      prisma.application.count({ where: { job: { companyId: company.id }, status: "PENDING" } }),
+      prisma.application.count({ where: { job: { companyId: company.id }, status: "SHORTLISTED" } }),
+      prisma.application.count({ where: { job: { companyId: company.id }, status: "REJECTED" } }),
+      prisma.application.count({ where: { job: { companyId: company.id }, status: "HIRED" } }),
+      prisma.notification.count({ where: { userId: req.user.id, readAt: null } }),
+    ]);
 
-  const recentApplicants = await prisma.application.findMany({
-    where: { job: { companyId: company.id } },
-    orderBy: { createdAt: "desc" },
-    take: 8,
-    include: {
-      job: { select: { title: true } },
-      user: {
-        select: {
-          profile: {
-            select: { firstName: true, lastName: true, avatarUrl: true },
+    const [recentApplications, recentJobs, reviewingCount] = await Promise.all([
+      prisma.application.findMany({
+        where: { job: { companyId: company.id } },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        include: {
+          job: { select: { id: true, title: true } },
+          user: {
+            select: {
+              email: true,
+              profile: { select: { firstName: true, lastName: true, avatarUrl: true } },
+            },
           },
         },
-      },
-    },
-  });
-
-  const sevenWeeksAgo = new Date();
-  sevenWeeksAgo.setDate(sevenWeeksAgo.getDate() - 49);
-
-  const weeklyApplications = await prisma.application.findMany({
-    where: {
-      job: { companyId: company.id },
-      createdAt: { gte: sevenWeeksAgo },
-    },
-    select: { createdAt: true, status: true },
-  });
-
-  const chartData = buildWeeklyChart(weeklyApplications);
-  const funnelStages = [
-    { label: "Applied", count: totalApplications, color: "#3b82f6" },
-    {
-      label: "Reviewing",
-      count: await prisma.application.count({
-        where: { job: { companyId: company.id }, status: "REVIEWING" },
       }),
-      color: "#8b5cf6",
-    },
-    { label: "Shortlisted", count: shortlisted, color: "#f59e0b" },
-    { label: "Hired", count: hired, color: "#10b981" },
-  ];
+      prisma.job.findMany({
+        where: { companyId: company.id },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        include: { _count: { select: { applications: true } } },
+      }),
+      prisma.application.count({ where: { job: { companyId: company.id }, status: "REVIEWING" } }),
+    ]);
 
-  res.json({
-    stats: { activeJobs, totalApplications, shortlisted, hired },
-    chartData,
-    funnelStages,
-    recentApplicants,
-  });
+    const sevenWeeksAgo = new Date();
+    sevenWeeksAgo.setDate(sevenWeeksAgo.getDate() - 49);
+
+    const weeklyApplications = await prisma.application.findMany({
+      where: { job: { companyId: company.id }, createdAt: { gte: sevenWeeksAgo } },
+      select: { createdAt: true, status: true },
+    });
+
+    const applicationsOverTime = buildWeeklyChart(weeklyApplications);
+
+    const applicationStatusDistribution = [
+      { status: "PENDING", count: pendingApplications },
+      { status: "REVIEWING", count: reviewingCount },
+      { status: "SHORTLISTED", count: shortlistedApplications },
+      { status: "HIRED", count: acceptedApplications },
+      { status: "REJECTED", count: rejectedApplications },
+    ];
+
+    const topJobs = await prisma.job.findMany({
+      where: { companyId: company.id },
+      orderBy: { applications: { _count: "desc" } },
+      take: 5,
+      include: { _count: { select: { applications: true } } },
+    });
+    const topPerformingJobs = topJobs.map((j) => ({
+      id: j.id,
+      title: j.title,
+      applications: j._count.applications,
+    }));
+
+    const recentActivity = buildRecentActivity(recentApplications, recentJobs);
+
+    res.json({
+      success: true,
+      message: "Company dashboard fetched successfully",
+      data: {
+        metrics: {
+          totalJobs,
+          activeJobs,
+          draftJobs,
+          closedJobs,
+          totalApplications,
+          pendingApplications,
+          shortlistedApplications,
+          rejectedApplications,
+          acceptedApplications,
+          interviewsScheduled: 0,
+          unreadNotifications,
+          profileCompletion: calculateProfileCompletion(company),
+          verificationStatus: company.verification?.status || "PENDING",
+        },
+        recentApplications,
+        recentJobs,
+        applicationStatusDistribution,
+        applicationsOverTime,
+        topPerformingJobs,
+        recentActivity,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
 function buildWeeklyChart(applications) {
@@ -230,10 +356,26 @@ async function getAnalytics(req, res) {
     { label: "Hired", count: hired },
   ];
 
+  const [activeJobCount, draftJobCount, closedJobCount] = await Promise.all([
+    prisma.job.count({ where: { companyId: company.id, status: "ACTIVE" } }),
+    prisma.job.count({ where: { companyId: company.id, status: "DRAFT" } }),
+    prisma.job.count({ where: { companyId: company.id, status: "CLOSED" } }),
+  ]);
+
+  const totalJobCount = activeJobCount + draftJobCount + closedJobCount;
+  const averageApplicationsPerJob = totalJobCount > 0 ? Number((total / totalJobCount).toFixed(1)) : 0;
+  const jobsByStatus = [
+    { status: "ACTIVE", count: activeJobCount },
+    { status: "DRAFT", count: draftJobCount },
+    { status: "CLOSED", count: closedJobCount },
+  ];
+
   res.json({
     appTrend,
     jobPerformance,
     funnel,
+    jobsByStatus,
+    averageApplicationsPerJob,
     summary: { total, shortlisted, hired },
   });
 }

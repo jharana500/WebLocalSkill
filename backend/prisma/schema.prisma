@@ -52,6 +52,12 @@ enum VerificationStatus {
   DUPLICATE
 }
 
+enum JobStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -60,6 +66,8 @@ model User {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  notificationPreferences Json?
 
   profile               JobSeekerProfile?
   company               Company?
@@ -115,8 +123,11 @@ model Company {
   user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   name           String
   normalizedName String?
+  tagline        String?
   industry       String?
   size           String?
+  foundedYear    Int?
+  email          String?
   phone          String?
   website        String?
   district       String?
@@ -143,14 +154,20 @@ model Job {
   title        String
   description  String
   requirements String?
+  benefits     String?
   jobType      JobType
+  experience   String?
   category     String
   salary       String?
+  salaryMin    Int?
+  salaryMax    Int?
+  openings     Int?      @default(1)
   district     String?
   address      String?
+  status       JobStatus @default(DRAFT)
   isActive     Boolean   @default(true)
   isFeatured   Boolean   @default(false)
-  expiresAt    DateTime?
+  deadline     DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
