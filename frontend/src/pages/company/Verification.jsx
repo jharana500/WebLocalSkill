@@ -16,8 +16,20 @@ const benefits = [
 const STATUS_STEPS = {
   PENDING: 1,
   UNDER_REVIEW: 2,
-  APPROVED: 3,
+  VERIFIED: 3,
   REJECTED: 0,
+  DUPLICATE: 0,
+}
+
+const STATUS_GUIDANCE = {
+  REJECTED: {
+    title: 'Verification Rejected',
+    message: 'Verification was rejected. Please review the reason below and resubmit your documents.',
+  },
+  DUPLICATE: {
+    title: 'Possible Duplicate',
+    message: 'Your company was marked as a possible duplicate of an existing company. If this is a mistake, please contact support or update your registration details and resubmit.',
+  },
 }
 
 export default function CompanyVerification() {
@@ -53,7 +65,7 @@ export default function CompanyVerification() {
   })
 
   const verification = data?.verification || data
-  const verificationStatus = verification?.status || (data?.isVerified ? 'APPROVED' : null)
+  const verificationStatus = verification?.status || (data?.isVerified ? 'VERIFIED' : null)
 
   const stepIdx = STATUS_STEPS[verificationStatus] ?? -1
   const verificationSteps = [
@@ -72,7 +84,7 @@ export default function CompanyVerification() {
     )
   }
 
-  if (verificationStatus === 'APPROVED') {
+  if (verificationStatus === 'VERIFIED') {
     return (
       <div className="max-w-xl mx-auto text-center py-16">
         <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -99,11 +111,11 @@ export default function CompanyVerification() {
           className="mb-6"
         />
       )}
-      {verificationStatus === 'REJECTED' && verification?.reviewNotes && (
+      {STATUS_GUIDANCE[verificationStatus] && (
         <Alert
-          type="error"
-          title="Verification Rejected"
-          message={verification.reviewNotes}
+          type={verificationStatus === 'DUPLICATE' ? 'warning' : 'error'}
+          title={STATUS_GUIDANCE[verificationStatus].title}
+          message={verification?.reviewNotes || STATUS_GUIDANCE[verificationStatus].message}
           className="mb-6"
         />
       )}
@@ -157,7 +169,7 @@ export default function CompanyVerification() {
       )}
 
       {/* Submit Documents (only if not under review or approved) */}
-      {!['UNDER_REVIEW', 'APPROVED'].includes(verificationStatus) && (
+      {!['UNDER_REVIEW', 'VERIFIED'].includes(verificationStatus) && (
         <div className="bg-white border border-slate-200 rounded-xl p-6">
           <h2 className="text-base font-semibold text-slate-900 mb-5">Submit Documents</h2>
           {submitError && <Alert type="error" message={submitError} className="mb-4" />}

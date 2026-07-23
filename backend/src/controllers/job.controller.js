@@ -66,11 +66,18 @@ async function getJobById(req, res) {
 async function createJob(req, res) {
   const company = await prisma.company.findUnique({ where: { userId: req.user.id } })
   if (!company) return res.status(404).json({ message: 'Company not found' })
-  if (!company.isVerified) {
-    return res.status(403).json({ message: 'Company must be verified to post jobs' })
+
+  const { title, description, requirements, jobType, category, salary, district, address, expiresAt, isActive } = req.body
+
+  // Unverified companies may still save draft jobs, they just can't publish
+  // one as active — the request can ask for isActive, but it's forced to
+  // false unless the company is verified. This is enforced server-side;
+  // the frontend must never be trusted for this restriction.
+  const requestedActive = isActive === undefined ? true : Boolean(isActive)
+  if (requestedActive && !company.isVerified) {
+    return res.status(403).json({ message: 'Your company must be verified before publishing jobs.' })
   }
 
-  const { title, description, requirements, jobType, category, salary, district, address, expiresAt } = req.body
   const job = await prisma.job.create({
     data: {
       companyId: company.id,
@@ -82,6 +89,7 @@ async function createJob(req, res) {
       salary,
       district,
       address,
+      isActive: company.isVerified ? requestedActive : false,
       expiresAt: expiresAt ? new Date(expiresAt) : null,
     },
     include: {
@@ -121,9 +129,15 @@ async function toggleJobStatus(req, res) {
   const company = await prisma.company.findUnique({ where: { userId: req.user.id } })
   const job = await prisma.job.findFirst({ where: { id: req.params.id, companyId: company.id } })
   if (!job) return res.status(404).json({ message: 'Job not found' })
+
+  const activating = !job.isActive
+  if (activating && !company.isVerified) {
+    return res.status(403).json({ message: 'Your company must be verified before publishing jobs.' })
+  }
+
   const updated = await prisma.job.update({
     where: { id: req.params.id },
-    data: { isActive: !job.isActive },
+    data: { isActive: activating },
   })
   res.json({ job: updated })
 }
