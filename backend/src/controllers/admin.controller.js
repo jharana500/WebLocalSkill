@@ -1,4 +1,126 @@
 const prisma = require('../lib/prisma')
+const { analyzeDuplicateRisk } = require('../services/companyDuplicateService')
+const { buildAuditLog } = require('../services/auditLogService')
+const { buildNotification } = require('../services/notificationService')
+
+const REASON_MIN_LENGTH = 5
+const REASON_MAX_LENGTH = 1000
+
+const VERIFICATION_TRANSITIONS = {
+  PENDING: ['UNDER_REVIEW', 'VERIFIED', 'REJECTED', 'DUPLICATE'],
+  UNDER_REVIEW: ['VERIFIED', 'REJECTED', 'DUPLICATE'],
+  REJECTED: ['UNDER_REVIEW', 'VERIFIED'],
+  DUPLICATE: ['UNDER_REVIEW', 'PENDING', 'VERIFIED'],
+  VERIFIED: ['UNDER_REVIEW'],
+}
+
+const COMPANY_SORT_WHITELIST = new Set(['createdAt', 'name', 'updatedAt'])
+
+function readableStatus(status) {
+  return String(status || '').replace(/_/g, ' ').toLowerCase()
+}
+
+function validateReason(reason) {
+  const trimmed = String(reason || '').trim()
+  if (trimmed.length < REASON_MIN_LENGTH) {
+    return { valid: false, message: `Reason must be at least ${REASON_MIN_LENGTH} characters` }
+  }
+  if (trimmed.length > REASON_MAX_LENGTH) {
+    return { valid: false, message: `Reason must be under ${REASON_MAX_LENGTH} characters` }
+  }
+  return { valid: true, reason: trimmed }
+}
+
+// Every verification decision moves CompanyVerification.status, flips
+// Company.isVerified, writes an audit log entry, and notifies the owner —
+// all inside one transaction so a status change can never persist without
+// its audit trail (Phase 4.31).
+async function transitionCompanyVerification(req, res, { targetStatus, reason, duplicateOfCompanyId, auditAction, notificationTitle, notificationMessage }) {
+  const company = await prisma.company.findUnique({
+    where: { id: req.params.id },
+    include: { verification: true },
+  })
+  if (!company) {
+    return res.status(404).json({ success: false, message: 'Company not found' })
+  }
+
+  const currentStatus = company.verification?.status || 'PENDING'
+
+  if (currentStatus === targetStatus) {
+    return res.status(400).json({
+      success: false,
+      message: `Company is already ${readableStatus(targetStatus)}`,
+      errors: [],
+    })
+  }
+
+  const allowed = VERIFICATION_TRANSITIONS[currentStatus] || []
+  if (!allowed.includes(targetStatus)) {
+    return res.status(400).json({
+      success: false,
+      message: `Cannot move a company from ${readableStatus(currentStatus)} to ${readableStatus(targetStatus)}`,
+      errors: [],
+    })
+  }
+
+  const verificationData = {
+    status: targetStatus,
+    reviewedById: req.user.id,
+    reviewedAt: new Date(),
+    // Only DUPLICATE ever keeps a duplicateOfCompanyId — every other
+    // transition (including restore) clears a stale link automatically.
+    duplicateOfCompanyId: targetStatus === 'DUPLICATE' ? duplicateOfCompanyId : null,
+    ...(reason !== undefined ? { reviewNotes: reason || null } : {}),
+  }
+
+  const isVerified = targetStatus === 'VERIFIED'
+  const oldValue = { status: currentStatus, isVerified: company.isVerified }
+  const newValue = { status: targetStatus, isVerified }
+
+  await prisma.$transaction([
+    prisma.companyVerification.upsert({
+      where: { companyId: company.id },
+      update: verificationData,
+      create: { companyId: company.id, ...verificationData },
+    }),
+    prisma.company.update({ where: { id: company.id }, data: { isVerified } }),
+    buildAuditLog({
+      adminId: req.user.id,
+      action: auditAction,
+      entityType: 'Company',
+      entityId: company.id,
+      oldValue,
+      newValue,
+      reason: reason || null,
+    }),
+    buildNotification({
+      userId: company.userId,
+      type: 'COMPANY_VERIFICATION',
+      title: notificationTitle,
+      message: notificationMessage,
+      data: { companyId: company.id, status: targetStatus, reason: reason || null },
+    }),
+  ])
+
+  const updatedCompany = await prisma.company.findUnique({
+    where: { id: company.id },
+    include: {
+      user: { select: { email: true } },
+      verification: {
+        include: {
+          reviewedBy: { select: { id: true, email: true } },
+          duplicateOfCompany: { select: { id: true, name: true, isVerified: true } },
+        },
+      },
+    },
+  })
+
+  return res.json({
+    success: true,
+    message: `Company ${readableStatus(targetStatus)} successfully`,
+    data: { company: updatedCompany },
+  })
+}
 
 async function getDashboardStats(req, res) {
   const [
@@ -172,53 +294,274 @@ async function activateUser(req, res) {
   res.json({ message: 'User activated' })
 }
 
-async function getCompanies(req, res) {
-  const { page = 1, limit = 20, q, status, plan } = req.query
-  const skip = (Number(page) - 1) * Number(limit)
-  const where = {}
+async function getCompanies(req, res, next) {
+  try {
+    const rawPage = Number.parseInt(req.query.page, 10)
+    const rawLimit = Number.parseInt(req.query.limit, 10)
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 10
+    const { q, status, plan, verificationStatus, duplicateRisk } = req.query
+    const sortBy = COMPANY_SORT_WHITELIST.has(req.query.sortBy) ? req.query.sortBy : 'createdAt'
+    const sortOrder = req.query.sortOrder === 'asc' ? 'asc' : 'desc'
 
-  if (q) {
-    where.OR = [
-      { name: { contains: q, mode: 'insensitive' } },
-      { industry: { contains: q, mode: 'insensitive' } },
-    ]
-  }
-  if (status && status !== 'all') where.status = status.toUpperCase()
-  if (plan && plan !== 'all') where.plan = plan.toUpperCase()
+    const where = {}
+    if (q) {
+      const term = String(q).trim()
+      where.OR = [
+        { name: { contains: term, mode: 'insensitive' } },
+        { industry: { contains: term, mode: 'insensitive' } },
+        { district: { contains: term, mode: 'insensitive' } },
+        { user: { email: { contains: term, mode: 'insensitive' } } },
+        { verification: { registrationNumber: { contains: term, mode: 'insensitive' } } },
+        { verification: { panNumber: { contains: term, mode: 'insensitive' } } },
+      ]
+    }
+    if (status && status !== 'all') where.status = status.toUpperCase()
+    if (plan && plan !== 'all') where.plan = plan.toUpperCase()
+    if (verificationStatus && verificationStatus !== 'all') {
+      where.verification = { ...where.verification, status: verificationStatus.toUpperCase() }
+    }
 
-  const [companies, total] = await Promise.all([
-    prisma.company.findMany({
+    const baseInclude = {
+      user: { select: { email: true, createdAt: true } },
+      _count: { select: { jobs: true } },
+      verification: { select: { status: true, reviewedAt: true } },
+    }
+
+    if (!duplicateRisk || duplicateRisk === 'all') {
+      const [companies, total] = await Promise.all([
+        prisma.company.findMany({
+          where,
+          skip: (page - 1) * limit,
+          take: limit,
+          orderBy: { [sortBy]: sortOrder },
+          include: baseInclude,
+        }),
+        prisma.company.count({ where }),
+      ])
+
+      return res.json({
+        success: true,
+        message: 'Companies fetched successfully',
+        data: {
+          companies,
+          pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+        },
+      })
+    }
+
+    // Risk filtering requires computing a score per candidate — bounded to a
+    // sane pool size rather than the whole table, since this is an
+    // admin-only, moderate-scale review tool, not a public search endpoint.
+    const candidates = await prisma.company.findMany({
       where,
-      skip,
-      take: Number(limit),
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: { select: { email: true, createdAt: true } },
-        _count: { select: { jobs: true } },
-        verification: { select: { status: true } },
-      },
-    }),
-    prisma.company.count({ where }),
-  ])
+      orderBy: { [sortBy]: sortOrder },
+      include: baseInclude,
+      take: 500,
+    })
 
-  res.json({
-    companies,
-    pagination: { total, page: Number(page), limit: Number(limit), totalPages: Math.ceil(total / Number(limit)) },
-  })
+    const annotated = await Promise.all(
+      candidates.map(async (company) => {
+        const analysis = await analyzeDuplicateRisk(company.id)
+        return { ...company, duplicateRiskLevel: analysis?.riskLevel || 'LOW', duplicateRiskScore: analysis?.riskScore || 0 }
+      }),
+    )
+
+    const filtered = annotated.filter((c) => c.duplicateRiskLevel === duplicateRisk.toUpperCase())
+    const total = filtered.length
+    const paged = filtered.slice((page - 1) * limit, (page - 1) * limit + limit)
+
+    res.json({
+      success: true,
+      message: 'Companies fetched successfully',
+      data: {
+        companies: paged,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      },
+    })
+  } catch (error) {
+    next(error)
+  }
 }
 
-async function getCompanyById(req, res) {
-  const company = await prisma.company.findUnique({
-    where: { id: req.params.id },
-    include: {
-      user: { select: { email: true, createdAt: true, isActive: true } },
-      jobs: { orderBy: { createdAt: 'desc' }, take: 10 },
-      verification: true,
-      _count: { select: { jobs: true } },
-    },
-  })
-  if (!company) return res.status(404).json({ message: 'Company not found' })
-  res.json({ company })
+async function getCompanyById(req, res, next) {
+  try {
+    const company = await prisma.company.findUnique({
+      where: { id: req.params.id },
+      include: {
+        user: { select: { email: true, createdAt: true, isActive: true } },
+        jobs: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          include: { _count: { select: { applications: true } } },
+        },
+        verification: {
+          include: {
+            reviewedBy: { select: { id: true, email: true } },
+            duplicateOfCompany: { select: { id: true, name: true, isVerified: true } },
+          },
+        },
+        duplicateFlaggedBy: { select: { id: true, companyId: true } },
+        _count: { select: { jobs: true } },
+      },
+    })
+    if (!company) {
+      return res.status(404).json({ success: false, message: 'Company not found' })
+    }
+
+    const [applicationCount, auditLog] = await Promise.all([
+      prisma.application.count({ where: { job: { companyId: company.id } } }),
+      prisma.adminAuditLog.findMany({
+        where: { entityType: 'Company', entityId: company.id },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: { admin: { select: { id: true, email: true } } },
+      }),
+    ])
+
+    res.json({
+      success: true,
+      message: 'Company fetched successfully',
+      data: { company, applicationCount, auditLog },
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+async function getCompanyDuplicateCheck(req, res, next) {
+  try {
+    const analysis = await analyzeDuplicateRisk(req.params.id)
+    if (!analysis) {
+      return res.status(404).json({ success: false, message: 'Company not found' })
+    }
+    res.json({ success: true, message: 'Duplicate analysis completed', data: analysis })
+  } catch (error) {
+    next(error)
+  }
+}
+
+async function getCompanyAuditLog(req, res, next) {
+  try {
+    const company = await prisma.company.findUnique({ where: { id: req.params.id }, select: { id: true } })
+    if (!company) {
+      return res.status(404).json({ success: false, message: 'Company not found' })
+    }
+    const auditLog = await prisma.adminAuditLog.findMany({
+      where: { entityType: 'Company', entityId: company.id },
+      orderBy: { createdAt: 'desc' },
+      include: { admin: { select: { id: true, email: true } } },
+    })
+    res.json({ success: true, message: 'Audit log fetched successfully', data: { auditLog } })
+  } catch (error) {
+    next(error)
+  }
+}
+
+async function markCompanyUnderReview(req, res, next) {
+  try {
+    const reason = req.body?.reason ? String(req.body.reason).trim() : undefined
+    await transitionCompanyVerification(req, res, {
+      targetStatus: 'UNDER_REVIEW',
+      reason,
+      auditAction: 'UNDER_REVIEW',
+      notificationTitle: 'Verification under review',
+      notificationMessage: 'Your company verification is now under review.',
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+async function verifyCompany(req, res, next) {
+  try {
+    const reason = req.body?.reason ? String(req.body.reason).trim() : undefined
+    await transitionCompanyVerification(req, res, {
+      targetStatus: 'VERIFIED',
+      reason,
+      auditAction: 'VERIFIED',
+      notificationTitle: 'Company verified',
+      notificationMessage: 'Your company has been successfully verified.',
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+async function rejectCompany(req, res, next) {
+  try {
+    const validation = validateReason(req.body?.reason)
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, message: validation.message, errors: [] })
+    }
+    await transitionCompanyVerification(req, res, {
+      targetStatus: 'REJECTED',
+      reason: validation.reason,
+      auditAction: 'REJECTED',
+      notificationTitle: 'Verification rejected',
+      notificationMessage: 'Your company verification was rejected. Please review the provided reason.',
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+async function markCompanyDuplicate(req, res, next) {
+  try {
+    const { duplicateOfCompanyId } = req.body || {}
+    const validation = validateReason(req.body?.reason)
+
+    if (!duplicateOfCompanyId) {
+      return res.status(400).json({ success: false, message: 'A matched company is required', errors: [] })
+    }
+    if (duplicateOfCompanyId === req.params.id) {
+      return res.status(400).json({ success: false, message: 'A company cannot be marked as a duplicate of itself', errors: [] })
+    }
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, message: validation.message, errors: [] })
+    }
+
+    const target = await prisma.company.findUnique({
+      where: { id: duplicateOfCompanyId },
+      include: { verification: { select: { duplicateOfCompanyId: true } } },
+    })
+    if (!target) {
+      return res.status(400).json({ success: false, message: 'The selected matched company does not exist', errors: [] })
+    }
+    if (target.verification?.duplicateOfCompanyId === req.params.id) {
+      return res.status(400).json({ success: false, message: 'This would create a circular duplicate relationship', errors: [] })
+    }
+
+    await transitionCompanyVerification(req, res, {
+      targetStatus: 'DUPLICATE',
+      reason: validation.reason,
+      duplicateOfCompanyId,
+      auditAction: 'DUPLICATE',
+      notificationTitle: 'Possible duplicate company',
+      notificationMessage: 'Your company was marked as a possible duplicate of an existing company.',
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+async function restoreCompany(req, res, next) {
+  try {
+    const requestedStatus = String(req.body?.status || 'PENDING').toUpperCase()
+    if (!['PENDING', 'UNDER_REVIEW'].includes(requestedStatus)) {
+      return res.status(400).json({ success: false, message: 'Restored status must be PENDING or UNDER_REVIEW', errors: [] })
+    }
+    const reason = req.body?.reason ? String(req.body.reason).trim() : undefined
+    await transitionCompanyVerification(req, res, {
+      targetStatus: requestedStatus,
+      reason,
+      auditAction: 'RESTORED',
+      notificationTitle: 'Verification reopened',
+      notificationMessage: 'Your company verification request has been reopened.',
+    })
+  } catch (error) {
+    next(error)
+  }
 }
 
 async function updateCompanyStatus(req, res) {
@@ -232,60 +575,6 @@ async function updateCompanyStatus(req, res) {
     data: { status: status.toUpperCase() },
   })
   res.json({ company })
-}
-
-async function getVerificationQueue(req, res) {
-  const { page = 1, limit = 10, status = 'PENDING' } = req.query
-  const skip = (Number(page) - 1) * Number(limit)
-  const where = {}
-  if (status && status !== 'all') where.status = status.toUpperCase()
-
-  const [verifications, total] = await Promise.all([
-    prisma.companyVerification.findMany({
-      where,
-      skip,
-      take: Number(limit),
-      orderBy: { submittedAt: 'desc' },
-      include: {
-        company: {
-          include: {
-            user: { select: { email: true } },
-          },
-        },
-      },
-    }),
-    prisma.companyVerification.count({ where }),
-  ])
-
-  res.json({
-    verifications,
-    pagination: { total, page: Number(page), limit: Number(limit), totalPages: Math.ceil(total / Number(limit)) },
-  })
-}
-
-async function reviewVerification(req, res) {
-  const { decision, notes } = req.body
-  if (!['APPROVED', 'REJECTED', 'UNDER_REVIEW'].includes(decision?.toUpperCase())) {
-    return res.status(400).json({ message: 'Decision must be APPROVED, REJECTED, or UNDER_REVIEW' })
-  }
-
-  const verification = await prisma.companyVerification.update({
-    where: { id: req.params.id },
-    data: {
-      status: decision.toUpperCase(),
-      reviewNotes: notes,
-      reviewedAt: new Date(),
-    },
-  })
-
-  if (decision.toUpperCase() === 'APPROVED') {
-    await prisma.company.update({
-      where: { id: verification.companyId },
-      data: { isVerified: true },
-    })
-  }
-
-  res.json({ verification })
 }
 
 async function getAdminJobs(req, res) {
@@ -426,7 +715,8 @@ async function getReports(req, res) {
 module.exports = {
   getDashboardStats, getUsers, getUserById, updateUser, deactivateUser, activateUser,
   getCompanies, getCompanyById, updateCompanyStatus,
-  getVerificationQueue, reviewVerification,
+  getCompanyDuplicateCheck, getCompanyAuditLog,
+  markCompanyUnderReview, verifyCompany, rejectCompany, markCompanyDuplicate, restoreCompany,
   getAdminJobs, updateJobStatus,
   getAnalytics, getRevenue, getReports,
 }
