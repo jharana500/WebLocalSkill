@@ -43,6 +43,7 @@ const SavedJobs = lazy(() => import('@/pages/jobseeker/SavedJobs'))
 const Applications = lazy(() => import('@/pages/jobseeker/Applications'))
 const ApplicationDetail = lazy(() => import('@/pages/jobseeker/ApplicationDetail'))
 const ResumeBuilder = lazy(() => import('@/pages/jobseeker/ResumeBuilder'))
+const JSMessages = lazy(() => import('@/pages/jobseeker/Messages'))
 const JSProfile = lazy(() => import('@/pages/jobseeker/Profile'))
 const JSSettings = lazy(() => import('@/pages/jobseeker/Settings'))
 
@@ -111,6 +112,7 @@ export default function AppRoutes() {
           <Route path="/dashboard/applications" element={<Applications />} />
           <Route path="/dashboard/applications/:id" element={<ApplicationDetail />} />
           <Route path="/dashboard/resume" element={<ResumeBuilder />} />
+          <Route path="/dashboard/messages" element={<JSMessages />} />
           <Route path="/dashboard/profile" element={<JSProfile />} />
           <Route path="/dashboard/settings" element={<JSSettings />} />
         </Route>
