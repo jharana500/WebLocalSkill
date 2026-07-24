@@ -41,6 +41,7 @@ app.use("/api/billing", billingRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/plans", require("./src/routes/plans.routes"));
+app.use("/api/contact", require("./src/routes/contact.routes"));
 
 app.get("/api/health", (req, res) => {
   res.json({

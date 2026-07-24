@@ -1,15 +1,57 @@
 import { useState } from 'react'
 import { MapPin, Mail, Phone, Send, CheckCircle2 } from 'lucide-react'
-import { Button } from '@/components/ui'
+import { Button, Alert } from '@/components/ui'
 import { Input, Textarea, Select } from '@/components/ui/Input'
+import { contactService } from '@/services/contactService'
+
+const EMAIL_PATTERN = /^\S+@\S+\.\S+$/
+const MIN_MESSAGE_LENGTH = 10
+
+function validate(form) {
+  const errors = {}
+  if (!form.name.trim()) errors.name = 'Name is required.'
+  if (!form.email.trim()) errors.email = 'Email is required.'
+  else if (!EMAIL_PATTERN.test(form.email.trim())) errors.email = 'Enter a valid email address.'
+  if (!form.subject) errors.subject = 'Please select a subject.'
+  if (!form.message.trim()) errors.message = 'Message is required.'
+  else if (form.message.trim().length < MIN_MESSAGE_LENGTH) {
+    errors.message = `Message must be at least ${MIN_MESSAGE_LENGTH} characters.`
+  }
+  return errors
+}
 
 export default function Contact() {
   const [sent, setSent] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' })
+  const [errors, setErrors] = useState({})
+  const [submitError, setSubmitError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    setSent(true)
+    setSubmitError('')
+
+    const trimmed = {
+      name: form.name.trim(),
+      email: form.email.trim(),
+      subject: form.subject,
+      message: form.message.trim(),
+    }
+    const validationErrors = validate(trimmed)
+    setErrors(validationErrors)
+    if (Object.keys(validationErrors).length > 0) return
+
+    setSubmitting(true)
+    try {
+      await contactService.send(trimmed)
+      setSent(true)
+      setForm({ name: '', email: '', subject: '', message: '' })
+      setErrors({})
+    } catch (err) {
+      setSubmitError(err?.message || 'Could not send your message. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (sent) {
@@ -70,12 +112,14 @@ export default function Contact() {
           <div className="md:col-span-2">
             <div className="bg-white border border-slate-200 rounded-2xl p-8">
               <h2 className="text-xl font-bold text-slate-900 mb-6">Send Us a Message</h2>
-              <form onSubmit={handleSubmit} className="space-y-5">
+              {submitError && <Alert type="error" message={submitError} className="mb-5" dismissible onClose={() => setSubmitError('')} />}
+              <form onSubmit={handleSubmit} noValidate className="space-y-5">
                 <div className="grid sm:grid-cols-2 gap-5">
                   <Input
                     label="Full Name"
                     placeholder="Your name"
                     required
+                    error={errors.name}
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                   />
@@ -84,6 +128,7 @@ export default function Contact() {
                     type="email"
                     placeholder="your@email.com"
                     required
+                    error={errors.email}
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                   />
@@ -91,6 +136,7 @@ export default function Contact() {
                 <Select
                   label="Subject"
                   required
+                  error={errors.subject}
                   value={form.subject}
                   onChange={(e) => setForm({ ...form, subject: e.target.value })}
                   placeholder="Select a topic..."
@@ -106,10 +152,11 @@ export default function Contact() {
                   placeholder="Tell us how we can help..."
                   required
                   rows={5}
+                  error={errors.message}
                   value={form.message}
                   onChange={(e) => setForm({ ...form, message: e.target.value })}
                 />
-                <Button type="submit" variant="primary" size="lg" icon={Send} fullWidth>
+                <Button type="submit" variant="primary" size="lg" icon={Send} fullWidth loading={submitting} disabled={submitting}>
                   Send Message
                 </Button>
               </form>
