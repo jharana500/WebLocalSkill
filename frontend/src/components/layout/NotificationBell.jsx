@@ -9,6 +9,7 @@ import { cn } from '@/utils/cn'
 const TYPE_LINK = {
   APPLICATION_STATUS: () => '/dashboard/applications',
   COMPANY_VERIFICATION: () => '/company/verification',
+  ADMIN_VERIFICATION: () => '/admin/verification',
 }
 
 export function NotificationBell() {

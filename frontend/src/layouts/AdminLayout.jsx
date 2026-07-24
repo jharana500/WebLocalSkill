@@ -1,12 +1,15 @@
 import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   LayoutDashboard, Users, Building2, Briefcase, FileText,
-  ShieldCheck, BarChart2, TrendingUp, Settings, Bell,
+  ShieldCheck, BarChart2, TrendingUp, Settings,
   Menu, X, ChevronLeft, ChevronRight, LogOut
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Avatar, Badge, Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui'
+import { NotificationBell } from '@/components/layout/NotificationBell'
+import { adminService } from '@/services/adminService'
 import useAuthStore from '@/store/authStore'
 import { useLogout } from '@/hooks/useAuth'
 
@@ -28,7 +31,7 @@ const navGroups = [
   {
     label: 'Operations',
     items: [
-      { icon: ShieldCheck, label: 'Verification Queue', href: '/admin/verification', badge: '5' },
+      { icon: ShieldCheck, label: 'Verification Queue', href: '/admin/verification' },
       { icon: FileText, label: 'Reports', href: '/admin/reports' },
     ],
   },
@@ -47,7 +50,7 @@ const navGroups = [
   },
 ]
 
-function Sidebar({ collapsed, onToggle }) {
+function Sidebar({ collapsed, onToggle, badgeCounts }) {
   const { user } = useAuthStore()
   const logout = useLogout()
 
@@ -84,34 +87,37 @@ function Sidebar({ collapsed, onToggle }) {
               </p>
             )}
             <div className="space-y-0.5">
-              {group.items.map(({ icon: Icon, label, href, badge }) => (
-                <NavLink
-                  key={href}
-                  to={href}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex items-center rounded-lg font-medium text-sm transition-all duration-150',
-                      collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5',
-                      isActive
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                    )
-                  }
-                  title={collapsed ? label : undefined}
-                >
-                  <Icon size={16} className="shrink-0" />
-                  {!collapsed && (
-                    <>
-                      <span className="flex-1">{label}</span>
-                      {badge && (
-                        <span className="h-5 min-w-5 px-1.5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-semibold">
-                          {badge}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </NavLink>
-              ))}
+              {group.items.map(({ icon: Icon, label, href }) => {
+                const badge = badgeCounts?.[href]
+                return (
+                  <NavLink
+                    key={href}
+                    to={href}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center rounded-lg font-medium text-sm transition-all duration-150',
+                        collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5',
+                        isActive
+                          ? 'bg-blue-600 text-white'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                      )
+                    }
+                    title={collapsed ? label : undefined}
+                  >
+                    <Icon size={16} className="shrink-0" />
+                    {!collapsed && (
+                      <>
+                        <span className="flex-1">{label}</span>
+                        {Boolean(badge) && (
+                          <span className="h-5 min-w-5 px-1.5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-semibold">
+                            {badge > 9 ? '9+' : badge}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </NavLink>
+                )
+              })}
             </div>
           </div>
         ))}
@@ -151,10 +157,7 @@ function TopBar({ onMobileMenuOpen }) {
       <div className="flex-1" />
 
       <div className="flex items-center gap-2">
-        <button className="relative p-2 rounded-lg text-slate-500 hover:bg-slate-100">
-          <Bell size={18} />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full" />
-        </button>
+        <NotificationBell />
 
         <Dropdown
           align="right"
@@ -181,9 +184,19 @@ export default function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
 
+  const { data: dashboardData } = useQuery({
+    queryKey: ['admin', 'dashboard'],
+    queryFn: adminService.getDashboardStats,
+    staleTime: 1000 * 60,
+    refetchInterval: 60 * 1000,
+  })
+  const badgeCounts = {
+    '/admin/verification': dashboardData?.stats?.pendingVerifications ?? 0,
+  }
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} badgeCounts={badgeCounts} />
 
       {mobileOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
@@ -199,22 +212,30 @@ export default function AdminLayout() {
               {navGroups.map((group) => (
                 <div key={group.label} className="mb-5">
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 px-3 mb-1.5">{group.label}</p>
-                  {group.items.map(({ icon: Icon, label, href }) => (
-                    <NavLink
-                      key={href}
-                      to={href}
-                      onClick={() => setMobileOpen(false)}
-                      className={({ isActive }) =>
-                        cn(
-                          'flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-sm transition-colors',
-                          isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                        )
-                      }
-                    >
-                      <Icon size={16} />
-                      {label}
-                    </NavLink>
-                  ))}
+                  {group.items.map(({ icon: Icon, label, href }) => {
+                    const badge = badgeCounts[href]
+                    return (
+                      <NavLink
+                        key={href}
+                        to={href}
+                        onClick={() => setMobileOpen(false)}
+                        className={({ isActive }) =>
+                          cn(
+                            'flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-sm transition-colors',
+                            isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                          )
+                        }
+                      >
+                        <Icon size={16} />
+                        <span className="flex-1">{label}</span>
+                        {Boolean(badge) && (
+                          <span className="h-5 min-w-5 px-1.5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-semibold">
+                            {badge > 9 ? '9+' : badge}
+                          </span>
+                        )}
+                      </NavLink>
+                    )
+                  })}
                 </div>
               ))}
             </nav>
