@@ -1,6 +1,6 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { Menu, X, ChevronDown, Briefcase, Building2 } from 'lucide-react'
+import { Menu, X, Briefcase } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui'
 import useAuthStore from '@/store/authStore'
