@@ -1,7 +1,19 @@
 import { useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import AppRoutes from '@/routes'
 import { ToastContainer } from '@/components/ui'
 import useAuthStore from '@/store/authStore'
+
+// Browsers keep scroll position across client-side route changes; without
+// this, following a footer/nav link mid-page (e.g. from the bottom of the
+// landing page to /about) lands the new page scrolled to that same offset.
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+  return null
+}
 
 function AppLoadingScreen() {
   return (
@@ -25,6 +37,7 @@ export default function App() {
 
   return (
     <>
+      <ScrollToTop />
       <AppRoutes />
       <ToastContainer />
     </>

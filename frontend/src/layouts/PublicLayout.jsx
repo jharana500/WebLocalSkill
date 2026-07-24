@@ -113,6 +113,41 @@ function Navbar() {
   )
 }
 
+const FOOTER_COLUMNS = [
+  {
+    title: 'For Job Seekers',
+    links: [
+      { label: 'Find Jobs', to: '/jobs' },
+      { label: 'Companies', to: '/companies' },
+      { label: 'Resume Builder', to: '/dashboard/resume' },
+      { label: 'Help Centre', to: '/faq' },
+    ],
+  },
+  {
+    title: 'For Companies',
+    links: [
+      { label: 'Post a Job', to: '/register' },
+      { label: 'Pricing', to: '/pricing' },
+      { label: 'Applicant Tracking', to: '/pricing' },
+      { label: 'Get Verified', to: '/register' },
+    ],
+  },
+  {
+    title: 'Company',
+    links: [
+      { label: 'About Us', to: '/about' },
+      { label: 'Contact Us', to: '/contact' },
+      { label: 'FAQ', to: '/faq' },
+    ],
+  },
+]
+
+const LEGAL_LINKS = [
+  { label: 'Privacy Policy', to: '/privacy' },
+  { label: 'Terms of Service', to: '/terms' },
+  { label: 'Cookie Policy', to: '/privacy' },
+]
+
 function Footer() {
   return (
     <footer className="bg-slate-900 text-slate-400">
@@ -128,29 +163,14 @@ function Footer() {
             <p className="text-sm leading-relaxed max-w-xs">
               Nepal's premier hiring platform. Connect directly with verified companies. No middlemen.
             </p>
-            <div className="flex gap-3 mt-5">
-              {['f', 'in', 'tw'].map((s) => (
-                <a
-                  key={s}
-                  href="#"
-                  className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 transition-colors"
-                >
-                  {s}
-                </a>
-              ))}
-            </div>
           </div>
-          {[
-            { title: 'For Job Seekers', links: ['Find Jobs', 'Companies', 'Resume Builder', 'Career Tips'] },
-            { title: 'For Companies', links: ['Post a Job', 'Pricing', 'Applicant Tracking', 'Get Verified'] },
-            { title: 'Company', links: ['About Us', 'Blog', 'Contact', 'FAQ'] },
-          ].map((col) => (
+          {FOOTER_COLUMNS.map((col) => (
             <div key={col.title}>
               <h4 className="text-white font-semibold text-sm mb-4">{col.title}</h4>
               <ul className="space-y-2.5">
                 {col.links.map((link) => (
-                  <li key={link}>
-                    <a href="#" className="text-sm hover:text-white transition-colors">{link}</a>
+                  <li key={link.label}>
+                    <Link to={link.to} className="text-sm hover:text-white transition-colors">{link.label}</Link>
                   </li>
                 ))}
               </ul>
@@ -160,9 +180,9 @@ function Footer() {
         <div className="border-t border-slate-800 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs">© {new Date().getFullYear()} LocalSkill Pvt. Ltd. All rights reserved.</p>
           <div className="flex gap-6 text-xs">
-            <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-white transition-colors">Cookie Policy</a>
+            {LEGAL_LINKS.map((link) => (
+              <Link key={link.label} to={link.to} className="hover:text-white transition-colors">{link.label}</Link>
+            ))}
           </div>
         </div>
       </div>

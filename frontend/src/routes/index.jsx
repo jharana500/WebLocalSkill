@@ -24,6 +24,8 @@ const About = lazy(() => import('@/pages/public/About'))
 const Contact = lazy(() => import('@/pages/public/Contact'))
 const Pricing = lazy(() => import('@/pages/public/Pricing'))
 const FAQ = lazy(() => import('@/pages/public/FAQ'))
+const Privacy = lazy(() => import('@/pages/public/Privacy'))
+const Terms = lazy(() => import('@/pages/public/Terms'))
 const CompanyDirectory = lazy(() => import('@/pages/public/CompanyDirectory'))
 const JobDirectory = lazy(() => import('@/pages/public/JobDirectory'))
 
@@ -84,6 +86,8 @@ export default function AppRoutes() {
           <Route path="/contact" element={<Contact />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/faq" element={<FAQ />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/terms" element={<Terms />} />
           <Route path="/companies" element={<CompanyDirectory />} />
           <Route path="/jobs" element={<JobDirectory />} />
         </Route>
