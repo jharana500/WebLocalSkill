@@ -40,6 +40,7 @@ app.use("/api/resumes", resumeRoutes);
 app.use("/api/billing", billingRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/plans", require("./src/routes/plans.routes"));
 
 app.get("/api/health", (req, res) => {
   res.json({

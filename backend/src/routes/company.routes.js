@@ -18,6 +18,7 @@ router.get('/verification/status', ctrl.getVerificationStatus)
 router.get('/dashboard', ctrl.getDashboardStats)
 router.get('/analytics', ctrl.getAnalytics)
 router.get('/billing/history', ctrl.getBillingHistory)
+router.get('/billing/plans', ctrl.getPlans)
 router.get('/subscription', ctrl.getSubscription)
 router.post('/subscription', ctrl.updateSubscription)
 

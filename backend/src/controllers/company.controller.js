@@ -1,6 +1,7 @@
 const prisma = require("../lib/prisma");
 const { getFileUrl } = require("../middleware/upload");
 const { normalizeCompanyName } = require("../services/companyDuplicateService");
+const { PLANS, getPlanById } = require("../config/plans");
 
 const EMAIL_PATTERN = /^\S+@\S+\.\S+$/;
 const CURRENT_YEAR = new Date().getFullYear();
@@ -413,13 +414,14 @@ async function getSubscription(req, res) {
     select: { plan: true },
   });
   const plan = company?.plan || "FREE";
+  const planConfig = getPlanById(plan);
   res.json({
     message: "Subscription fetched successfully",
     subscription: {
       plan,
       status: "active",
-      amount: 0,
-      currency: "NPR",
+      amount: planConfig?.monthlyAmount ?? 0,
+      currency: planConfig?.currency || "NPR",
       renewalDate: null,
     },
     plan,
@@ -428,24 +430,31 @@ async function getSubscription(req, res) {
 
 async function updateSubscription(req, res) {
   const { plan } = req.body;
-  const validPlans = ["FREE", "STARTER", "GROWTH", "ENTERPRISE"];
-  if (!validPlans.includes(plan?.toUpperCase())) {
+  const planConfig = getPlanById(plan);
+  if (!planConfig) {
     return res.status(400).json({ message: "Invalid plan" });
   }
   const company = await prisma.company.update({
     where: { userId: req.user.id },
-    data: { plan: plan.toUpperCase() },
+    data: { plan: planConfig.id },
   });
   res.json({
     message: "Subscription updated successfully",
     subscription: {
       plan: company.plan,
       status: "active",
-      amount: 0,
-      currency: "NPR",
+      amount: planConfig.monthlyAmount,
+      currency: planConfig.currency,
       renewalDate: null,
     },
     plan: company.plan,
+  });
+}
+
+async function getPlans(req, res) {
+  res.json({
+    message: "Billing plans fetched successfully",
+    plans: PLANS,
   });
 }
 
@@ -460,4 +469,5 @@ module.exports = {
   getBillingHistory,
   getSubscription,
   updateSubscription,
+  getPlans,
 };

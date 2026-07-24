@@ -13,6 +13,7 @@ export const companyService = {
   getDashboardStats: () => api.get('/company/dashboard'),
   getAnalytics: (range) => api.get('/company/analytics', { params: { range } }),
   getBillingHistory: () => api.get('/company/billing/history'),
+  getPlans: () => api.get('/company/billing/plans'),
   getSubscription: () => api.get('/company/subscription'),
   updateSubscription: (plan) => api.post('/company/subscription', { plan }),
   getPublicCompanies: (params) => api.get('/companies', { params }),

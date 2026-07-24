@@ -22,6 +22,7 @@ export function Tabs({ defaultValue, value, onValueChange, children, className }
 export function TabsList({ children, className }) {
   return (
     <div
+      role="tablist"
       className={cn(
         'flex items-center gap-1 bg-slate-100 rounded-xl p-1',
         className
@@ -34,7 +35,7 @@ export function TabsList({ children, className }) {
 
 export function TabsLinear({ children, className }) {
   return (
-    <div className={cn('flex items-center border-b border-slate-200 gap-0', className)}>
+    <div role="tablist" className={cn('flex items-center border-b border-slate-200 gap-0', className)}>
       {children}
     </div>
   )
@@ -46,6 +47,9 @@ export function TabsTrigger({ value, children, className }) {
 
   return (
     <button
+      type="button"
+      role="tab"
+      aria-selected={active}
       onClick={() => ctx.onChange(value)}
       className={cn(
         'px-4 py-2 text-sm font-medium rounded-lg transition-all duration-150',
@@ -66,6 +70,9 @@ export function TabsLinearTrigger({ value, children, className }) {
 
   return (
     <button
+      type="button"
+      role="tab"
+      aria-selected={active}
       onClick={() => ctx.onChange(value)}
       className={cn(
         'px-4 py-3 text-sm font-medium border-b-2 transition-all duration-150 -mb-px',
