@@ -13,12 +13,13 @@ import {
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Alert } from "@/components/ui";
-import { Input, Textarea } from "@/components/ui/Input";
+import { Input, Textarea, Select } from "@/components/ui/Input";
 import { cn } from "@/utils/cn";
 import { resumeService } from "@/services/resumeService";
 import useAuthStore from "@/store/authStore";
 import { toast } from "@/store/uiStore";
 import { formatDateRange, normalizeUrl } from "@/utils/formatters";
+import { getEducationYearOptions } from "@/utils/constants";
 import ResumePDFDocument from "./ResumePDFDocument";
 
 const tabs = [
@@ -157,8 +158,8 @@ function ResumePreview({ data }) {
               </p>
               <p className="text-slate-500 text-xs">
                 {edu.institution || ""}
-                {edu.startYear || edu.endYear
-                  ? ` · ${formatDateRange(edu.startYear, edu.endYear, false)}`
+                {edu.startYear || edu.endYear || edu.isCurrent
+                  ? ` · ${formatDateRange(edu.startYear, edu.endYear, edu.isCurrent)}`
                   : ""}
               </p>
             </div>
@@ -237,7 +238,29 @@ const BLANK_EXP = {
   isCurrent: false,
   description: "",
 };
-const BLANK_EDU = { degree: "", institution: "", startYear: "", endYear: "" };
+const BLANK_EDU = {
+  degree: "",
+  institution: "",
+  startYear: "",
+  endYear: "",
+  isCurrent: false,
+};
+
+// Validates populated education entries: a started entry needs a start year,
+// and a finished entry's end year can't precede its start year.
+function validateEducationList(education) {
+  for (const edu of education) {
+    const hasContent = edu.degree || edu.institution || edu.startYear || edu.endYear || edu.isCurrent;
+    if (!hasContent) continue;
+    if (!edu.startYear) {
+      return "Add a start year for each education entry you've started filling in.";
+    }
+    if (!edu.isCurrent && edu.endYear && Number(edu.endYear) < Number(edu.startYear)) {
+      return "End year cannot be earlier than start year for an education entry.";
+    }
+  }
+  return null;
+}
 const BLANK_PROJECT = { name: "", description: "", technologies: "", link: "" };
 const BLANK_CERT = { name: "", issuer: "", issueDate: "", credentialUrl: "" };
 
@@ -384,6 +407,17 @@ export default function ResumeBuilder() {
       ),
   });
 
+  const handleSaveDraft = () => {
+    const eduError = validateEducationList(data.education);
+    if (eduError) {
+      setValidationError(eduError);
+      toast.error("Fix education dates", eduError);
+      return;
+    }
+    setValidationError("");
+    saveMutation.mutate();
+  };
+
   const setField = (field) => (e) => {
     setValidationError("");
     setData((d) => ({ ...d, [field]: e.target.value }));
@@ -480,6 +514,12 @@ export default function ResumeBuilder() {
       );
       return;
     }
+    const eduError = validateEducationList(data.education);
+    if (eduError) {
+      setValidationError(eduError);
+      toast.error("Fix education dates", eduError);
+      return;
+    }
 
     try {
       setIsGeneratingPdf(true);
@@ -555,7 +595,7 @@ export default function ResumeBuilder() {
             icon={Save}
             loading={saveMutation.isPending}
             disabled={saveMutation.isPending}
-            onClick={() => saveMutation.mutate()}
+            onClick={handleSaveDraft}
           >
             Save Draft
           </Button>
@@ -785,20 +825,51 @@ export default function ResumeBuilder() {
                           updateEdu(i, "institution", e.target.value)
                         }
                       />
-                      <Input
+                      <Select
                         label="Start Year"
                         value={edu.startYear}
                         onChange={(e) =>
                           updateEdu(i, "startYear", e.target.value)
                         }
-                      />
-                      <Input
-                        label="End Year"
-                        value={edu.endYear}
-                        onChange={(e) =>
-                          updateEdu(i, "endYear", e.target.value)
-                        }
-                      />
+                        placeholder="Select year"
+                      >
+                        {getEducationYearOptions().map((year) => (
+                          <option key={year} value={year}>
+                            {year}
+                          </option>
+                        ))}
+                      </Select>
+                      <div>
+                        <Select
+                          label="End Year"
+                          value={edu.isCurrent ? "" : edu.endYear}
+                          onChange={(e) =>
+                            updateEdu(i, "endYear", e.target.value)
+                          }
+                          disabled={edu.isCurrent}
+                          placeholder={edu.isCurrent ? "Present" : "Select year"}
+                        >
+                          {getEducationYearOptions().map((year) => (
+                            <option key={year} value={year}>
+                              {year}
+                            </option>
+                          ))}
+                        </Select>
+                        <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={edu.isCurrent}
+                            onChange={(e) => {
+                              updateEdu(i, "isCurrent", e.target.checked);
+                              if (e.target.checked) updateEdu(i, "endYear", "");
+                            }}
+                            className="rounded border-slate-300 accent-blue-600"
+                          />
+                          <span className="text-xs text-slate-600">
+                            Currently studying
+                          </span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                 ))}

@@ -85,3 +85,15 @@ export const SALARY_RANGES = [
 export const PAGINATION_LIMIT = 20
 
 export const TOAST_DURATION = 4000
+
+// Descending list of years for education/experience year pickers, generated
+// dynamically so it never goes stale (current year down to 1950).
+export const EDUCATION_START_YEAR = 1950
+export function getEducationYearOptions() {
+  const currentYear = new Date().getFullYear()
+  const years = []
+  for (let year = currentYear; year >= EDUCATION_START_YEAR; year--) {
+    years.push(year)
+  }
+  return years
+}

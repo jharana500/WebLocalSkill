@@ -81,11 +81,50 @@ async function removeSkill(req, res) {
   res.json({ skills: updated.skills })
 }
 
+const CURRENT_YEAR = new Date().getFullYear()
+const EDUCATION_MIN_YEAR = 1950
+
+function validateEducationPayload(body) {
+  if (!body.institution || !String(body.institution).trim()) return 'Institution is required'
+  if (!body.degree || !String(body.degree).trim()) return 'Degree is required'
+  if (body.startYear === undefined || body.startYear === null || body.startYear === '') {
+    return 'Start year is required'
+  }
+  const startYear = Number.parseInt(body.startYear, 10)
+  if (!Number.isFinite(startYear) || startYear < EDUCATION_MIN_YEAR || startYear > CURRENT_YEAR) {
+    return `Start year must be between ${EDUCATION_MIN_YEAR} and ${CURRENT_YEAR}`
+  }
+  const isCurrent = !!body.isCurrent
+  if (!isCurrent && body.endYear !== undefined && body.endYear !== null && body.endYear !== '') {
+    const endYear = Number.parseInt(body.endYear, 10)
+    if (!Number.isFinite(endYear) || endYear < startYear || endYear > CURRENT_YEAR + 10) {
+      return 'End year cannot be earlier than start year'
+    }
+  }
+  return null
+}
+
+function readEducationPayload(body) {
+  const isCurrent = !!body.isCurrent
+  return {
+    institution: String(body.institution).trim(),
+    degree: String(body.degree).trim(),
+    field: body.field ? String(body.field).trim() : undefined,
+    startYear: Number.parseInt(body.startYear, 10),
+    endYear: isCurrent ? null : body.endYear ? Number.parseInt(body.endYear, 10) : null,
+    isCurrent,
+  }
+}
+
 async function addEducation(req, res) {
   const profile = await prisma.jobSeekerProfile.findUnique({ where: { userId: req.user.id } })
   if (!profile) return res.status(404).json({ message: 'Profile not found' })
+
+  const validationError = validateEducationPayload(req.body)
+  if (validationError) return res.status(400).json({ message: validationError })
+
   const education = await prisma.education.create({
-    data: { ...req.body, profileId: profile.id },
+    data: { ...readEducationPayload(req.body), profileId: profile.id },
   })
   res.status(201).json({ education })
 }
@@ -93,9 +132,14 @@ async function addEducation(req, res) {
 async function updateEducation(req, res) {
   const { id } = req.params
   const profile = await prisma.jobSeekerProfile.findUnique({ where: { userId: req.user.id } })
+  if (!profile) return res.status(404).json({ message: 'Profile not found' })
+
+  const validationError = validateEducationPayload(req.body)
+  if (validationError) return res.status(400).json({ message: validationError })
+
   const education = await prisma.education.update({
     where: { id, profileId: profile.id },
-    data: req.body,
+    data: readEducationPayload(req.body),
   })
   res.json({ education })
 }

@@ -17,10 +17,12 @@ import {
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Avatar, Alert } from "@/components/ui";
-import { Input, Textarea } from "@/components/ui/Input";
+import { Input, Textarea, Select } from "@/components/ui/Input";
 import useAuthStore from "@/store/authStore";
 import { userService } from "@/services/userService";
 import { cn } from "@/utils/cn";
+import { toast } from "@/store/uiStore";
+import { getEducationYearOptions } from "@/utils/constants";
 
 function Section({ icon: Icon, title, action, children }) {
   return (
@@ -102,6 +104,7 @@ const BLANK_EDU = {
   institution: "",
   startYear: "",
   endYear: "",
+  isCurrent: false,
   grade: "",
 };
 const BLANK_CERT = { name: "", issuer: "", year: "" };
@@ -236,8 +239,28 @@ export default function Profile() {
       if (editId) updateExpMutation.mutate({ id: editId, ...form });
       else addExpMutation.mutate(form);
     } else if (modal === "edu") {
-      if (editId) updateEduMutation.mutate({ id: editId, ...form });
-      else addEduMutation.mutate(form);
+      if (!form.institution?.trim() || !form.degree?.trim() || !form.startYear) {
+        toast.error(
+          "Missing required fields",
+          "Degree, institution, and start year are required.",
+        );
+        return;
+      }
+      if (!form.isCurrent && form.endYear && Number(form.endYear) < Number(form.startYear)) {
+        toast.error(
+          "Invalid date range",
+          "End year cannot be earlier than start year.",
+        );
+        return;
+      }
+      const payload = {
+        ...form,
+        startYear: Number(form.startYear),
+        endYear: form.isCurrent ? null : form.endYear ? Number(form.endYear) : null,
+        isCurrent: !!form.isCurrent,
+      };
+      if (editId) updateEduMutation.mutate({ id: editId, ...payload });
+      else addEduMutation.mutate(payload);
     } else if (modal === "cert") {
       addCertMutation.mutate(form);
     }
@@ -563,9 +586,9 @@ export default function Profile() {
                       <p className="text-sm text-slate-600">
                         {edu.institution}
                       </p>
-                      {(edu.startYear || edu.endYear) && (
+                      {(edu.startYear || edu.endYear || edu.isCurrent) && (
                         <p className="text-xs text-slate-400 mt-1">
-                          {edu.startYear} – {edu.endYear}
+                          {edu.startYear} – {edu.isCurrent ? "Present" : edu.endYear}
                           {edu.grade ? ` · ${edu.grade}` : ""}
                         </p>
                       )}
@@ -839,18 +862,45 @@ export default function Profile() {
             placeholder="e.g. Tribhuvan University"
           />
           <div className="grid sm:grid-cols-3 gap-4">
-            <Input
+            <Select
               label="Start Year"
               value={form.startYear || ""}
               onChange={set("startYear")}
-              placeholder="2018"
-            />
-            <Input
-              label="End Year"
-              value={form.endYear || ""}
-              onChange={set("endYear")}
-              placeholder="2022"
-            />
+              placeholder="Select year"
+            >
+              {getEducationYearOptions().map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </Select>
+            <div>
+              <Select
+                label="End Year"
+                value={form.isCurrent ? "" : form.endYear || ""}
+                onChange={set("endYear")}
+                disabled={!!form.isCurrent}
+                placeholder={form.isCurrent ? "Present" : "Select year"}
+              >
+                {getEducationYearOptions().map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </Select>
+              <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!form.isCurrent}
+                  onChange={(e) => {
+                    setCheck("isCurrent")(e);
+                    if (e.target.checked) set("endYear")({ target: { value: "" } });
+                  }}
+                  className="rounded border-slate-300 accent-blue-600"
+                />
+                <span className="text-xs text-slate-600">Currently studying</span>
+              </label>
+            </div>
             <Input
               label="Grade / GPA"
               value={form.grade || ""}
