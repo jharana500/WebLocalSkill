@@ -5,6 +5,7 @@ const prisma = require("../lib/prisma");
 const { sendError, sendSuccess } = require("../utils/response");
 const { isValidPassword, PASSWORD_REQUIREMENTS } = require("../utils/validation");
 const { normalizeCompanyName } = require("../services/companyDuplicateService");
+const emailService = require("../services/emailService");
 
 const PROFILE_SELECT = {
   profile: { select: { firstName: true, lastName: true, avatarUrl: true } },
@@ -206,12 +207,19 @@ async function forgotPassword(req, res) {
         },
       });
 
-      if (process.env.NODE_ENV !== "production") {
-        const resetUrl = `${process.env.CLIENT_URL || "http://localhost:5173"}/reset-password?token=${rawToken}`;
-        console.log(`[dev] Password reset link for ${normalizedEmail}: ${resetUrl}`);
-      }
+      const frontendUrl =
+        process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
+      const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
 
-      // TODO: send the raw token via the project's email service once configured.
+      if (emailService.isConfigured()) {
+        await emailService.sendPasswordResetEmail(normalizedEmail, resetUrl);
+      } else if (process.env.NODE_ENV !== "production") {
+        // Dev-only fallback so the flow is still testable without SMTP set up.
+        // Never do this in production — it would leak a live reset link to logs.
+        console.log(`[dev] SMTP not configured. Password reset link for ${normalizedEmail}: ${resetUrl}`);
+      } else {
+        console.error("[email] SMTP configuration missing — password reset email was not sent");
+      }
     }
 
     sendSuccess(res, neutralMessage);
