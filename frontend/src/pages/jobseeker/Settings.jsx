@@ -53,9 +53,13 @@ export default function JSSettings() {
   }, [prefsData])
 
   const pwMutation = useMutation({
-    mutationFn: () => userService.changePassword({ currentPassword: pwForm.current, newPassword: pwForm.newPw }),
+    mutationFn: () => userService.changePassword({
+      currentPassword: pwForm.current,
+      newPassword: pwForm.newPw,
+      confirmPassword: pwForm.confirm,
+    }),
     onSuccess: () => { setPwForm({ current: '', newPw: '', confirm: '' }); setPwError('') },
-    onError: (err) => setPwError(err?.response?.data?.message || 'Failed to update password'),
+    onError: (err) => setPwError(err?.response?.data?.message || err?.message || 'Failed to update password'),
   })
 
   const notifMutation = useMutation({
@@ -69,8 +73,14 @@ export default function JSSettings() {
   })
 
   const handlePasswordSubmit = () => {
-    if (pwForm.newPw !== pwForm.confirm) { setPwError('Passwords do not match'); return }
+    if (!pwForm.current || !pwForm.newPw || !pwForm.confirm) {
+      setPwError('Please fill in all password fields'); return
+    }
     if (pwForm.newPw.length < 8) { setPwError('Password must be at least 8 characters'); return }
+    if (!/[a-zA-Z]/.test(pwForm.newPw) || !/[0-9]/.test(pwForm.newPw)) {
+      setPwError('Password must include at least one letter and one number'); return
+    }
+    if (pwForm.newPw !== pwForm.confirm) { setPwError('New password and confirm password do not match'); return }
     setPwError('')
     pwMutation.mutate()
   }
@@ -91,12 +101,14 @@ export default function JSSettings() {
           <Input label="Current Password" type="password" placeholder="••••••••"
             value={pwForm.current} onChange={e => setPwForm(f => ({ ...f, current: e.target.value }))} />
           <Input label="New Password" type="password" placeholder="At least 8 characters"
+            hint="At least 8 characters, including one letter and one number"
             value={pwForm.newPw} onChange={e => setPwForm(f => ({ ...f, newPw: e.target.value }))} />
           <Input label="Confirm New Password" type="password" placeholder="Repeat new password"
+            error={pwForm.confirm && pwForm.newPw !== pwForm.confirm ? 'Passwords do not match' : undefined}
             value={pwForm.confirm} onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))} />
           <Button variant="primary" size="sm" icon={Save}
             loading={pwMutation.isPending}
-            disabled={!pwForm.current || !pwForm.newPw || !pwForm.confirm}
+            disabled={!pwForm.current || !pwForm.newPw || !pwForm.confirm || pwMutation.isPending}
             onClick={handlePasswordSubmit}>
             Update Password
           </Button>

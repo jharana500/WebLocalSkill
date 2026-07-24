@@ -52,23 +52,32 @@ export default function CompanySettings() {
     mutationFn: () => userService.changePassword({
       currentPassword: passwordForm.currentPassword,
       newPassword: passwordForm.newPassword,
+      confirmPassword: passwordForm.confirmPassword,
     }),
     onSuccess: () => {
       toast.success('Password updated', 'Your password has been changed successfully.')
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
       setPasswordError('')
     },
-    onError: (err) => setPasswordError(err?.message || 'Could not update password'),
+    onError: (err) => setPasswordError(err?.response?.data?.message || err?.message || 'Could not update password'),
   })
 
   const handlePasswordSubmit = () => {
     setPasswordError('')
-    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
-      setPasswordError('Enter your current and new password')
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      setPasswordError('Enter your current password, new password, and confirmation')
+      return
+    }
+    if (passwordForm.newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters')
+      return
+    }
+    if (!/[a-zA-Z]/.test(passwordForm.newPassword) || !/[0-9]/.test(passwordForm.newPassword)) {
+      setPasswordError('New password must include at least one letter and one number')
       return
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordError("New passwords don't match")
+      setPasswordError("New password and confirm password do not match")
       return
     }
     passwordMutation.mutate()
@@ -110,6 +119,7 @@ export default function CompanySettings() {
             label="New Password"
             type="password"
             placeholder="At least 8 characters"
+            hint="At least 8 characters, including one letter and one number"
             value={passwordForm.newPassword}
             onChange={(e) => setPasswordForm((f) => ({ ...f, newPassword: e.target.value }))}
           />
@@ -117,6 +127,7 @@ export default function CompanySettings() {
             label="Confirm New Password"
             type="password"
             placeholder="Repeat new password"
+            error={passwordForm.confirmPassword && passwordForm.newPassword !== passwordForm.confirmPassword ? 'Passwords do not match' : undefined}
             value={passwordForm.confirmPassword}
             onChange={(e) => setPasswordForm((f) => ({ ...f, confirmPassword: e.target.value }))}
           />
