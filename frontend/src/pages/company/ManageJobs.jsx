@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Edit2, Trash2, Eye, Send, Ban, RotateCcw, MoreVertical } from 'lucide-react'
@@ -26,10 +26,16 @@ const STATUS_TABS = ['all', 'DRAFT', 'ACTIVE', 'CLOSED']
 export default function ManageJobs() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { user } = useAuthStore()
+  const { user, refreshCurrentUser } = useAuthStore()
   const isVerified = !!user?.company?.isVerified
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+
+  // Keep the verification flag fresh so a company verified earlier in this
+  // session can immediately publish/reopen jobs without needing to re-login.
+  useEffect(() => {
+    refreshCurrentUser().catch(() => {})
+  }, [refreshCurrentUser])
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['company', 'jobs'],

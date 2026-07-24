@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -32,11 +32,18 @@ const steps = ['Job Details', 'Requirements', 'Compensation', 'Review']
 export default function PostJob() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { user } = useAuthStore()
+  const { user, refreshCurrentUser } = useAuthStore()
   const isVerified = !!user?.company?.isVerified
   const [step, setStep] = useState(0)
   const [postedJob, setPostedJob] = useState(null)
   const [publishedNow, setPublishedNow] = useState(false)
+
+  // The cached auth user can go stale if the company was verified earlier in
+  // this session (e.g. by an admin) — refresh so the publish gate reflects
+  // the company's actual current verification status, not a stale login.
+  useEffect(() => {
+    refreshCurrentUser().catch(() => {})
+  }, [refreshCurrentUser])
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
